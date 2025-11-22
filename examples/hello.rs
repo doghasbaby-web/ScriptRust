@@ -1,7 +1,7 @@
-let message: &str = "Hello, ScriptRust!";
+let message: String = "Hello, ScriptRust!";
 
-fn greet(name: &str) -> &str {
-    "Hello, " + name + "!"
+fn greet(name: String) -> String {
+    format!("{}{}", format!("{}{}", "Hello, ", name), "!")
 }
 
 println!("{:?}", message);

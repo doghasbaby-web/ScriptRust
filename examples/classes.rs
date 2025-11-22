@@ -1,14 +1,16 @@
 let PI: f64 = 3.14159;
 
 struct Shape {
-    pub type: &str,
+    pub type: String,
 }
 
 impl Shape {
-    pub fn new(type: &str) -> Self {
-        self.type = type;
+    pub fn new(type: String) -> Self {
+        Self {
+            type: type,
+        }
 }
-    pub fn getType(&self) -> &str {
+    pub fn getType(&self) -> String {
         self.type
 }
 }
@@ -19,7 +21,9 @@ struct Circle {
 
 impl Circle {
     pub fn new(r: f64) -> Self {
-        self.radius = r;
+        Self {
+            radius: r,
+        }
 }
     pub fn area(&self) -> f64 {
         PI * self.radius * self.radius
@@ -36,8 +40,10 @@ struct Rectangle {
 
 impl Rectangle {
     pub fn new(w: f64, h: f64) -> Self {
-        self.width = w;
-        self.height = h;
+        Self {
+            width: w,
+            height: h,
+        }
 }
     pub fn area(&self) -> f64 {
         self.width * self.height
