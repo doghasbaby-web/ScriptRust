@@ -22,7 +22,7 @@ describe('RustCodeGenerator', () => {
 const message: string = "Hello";`;
 
       const result = compileToRust(source);
-      expect(result).toContain('let message: &str = "Hello"');
+      expect(result).toContain('let message: String = "Hello"');
     });
 
     test('should convert mutable variable to Rust let mut', () => {
@@ -49,7 +49,7 @@ function greet(/* xxx, immutable: name */ name: string): string {
 }`;
 
       const result = compileToRust(source);
-      expect(result).toContain('fn greet(name: &str) -> &str');
+      expect(result).toContain('fn greet(name: String) -> String');
       expect(result).toContain('"Hello"');
     });
 
@@ -61,7 +61,7 @@ function fetchData(id: number): string {
 }`;
 
       const result = compileToRust(source);
-      expect(result).toContain('fn fetchData(id: f64) -> &str');
+      expect(result).toContain('fn fetchData(id: f64) -> String');
     });
 
     test('should handle void return type', () => {
@@ -125,10 +125,10 @@ function fetchData(id: number): string {
   });
 
   describe('Type Conversions', () => {
-    test('should convert TypeScript string to Rust &str', () => {
+    test('should convert TypeScript string to Rust String', () => {
       const source = `const name: string = "test";`;
       const result = compileToRust(source);
-      expect(result).toContain('&str');
+      expect(result).toContain('String');
     });
 
     test('should convert TypeScript number to Rust f64', () => {
@@ -211,16 +211,16 @@ console.log(greet("World"));`;
       const result = compileToRust(source);
 
       // Check variable declaration
-      expect(result).toContain('let message: &str = "Hello, ScriptRust!"');
+      expect(result).toContain('let message: String = "Hello, ScriptRust!"');
 
       // Check function declaration
-      expect(result).toContain('fn greet(name: &str) -> &str');
+      expect(result).toContain('fn greet(name: String) -> String');
 
       // Check console.log conversion
       expect(result).toContain('println!');
 
-      // Check string concatenation
-      expect(result).toContain('"Hello, "');
+      // Check string concatenation - now uses format!()
+      expect(result).toContain('format!');
     });
 
     test('should convert class with multiple methods', () => {

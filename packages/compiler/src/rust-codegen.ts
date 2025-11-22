@@ -263,8 +263,69 @@ export class RustCodeGenerator {
     }
 
     this.output += ' ';
-    this.generateBlockStatement(node.value.body, false);
+
+    // Special handling for constructors
+    if (node.kind === 'constructor') {
+      this.generateConstructorBody(node.value.body);
+    } else {
+      this.generateBlockStatement(node.value.body, false);
+    }
     this.output += '\n';
+  }
+
+  private generateConstructorBody(body: AST.BlockStatement): void {
+    this.output += '{\n';
+    this.indentLevel++;
+
+    // Extract field assignments from constructor body
+    const fieldAssignments: { field: string; value: AST.Expression }[] = [];
+    const otherStatements: AST.Statement[] = [];
+
+    for (const statement of body.body) {
+      // Check if this is a this.field = value assignment
+      if (statement.type === 'ExpressionStatement' &&
+          statement.expression.type === 'AssignmentExpression') {
+        const assignment = statement.expression;
+        if (assignment.left.type === 'MemberExpression' &&
+            assignment.left.object.type === 'ThisExpression' &&
+            assignment.left.property.type === 'Identifier') {
+          // This is a field assignment
+          fieldAssignments.push({
+            field: assignment.left.property.name,
+            value: assignment.right
+          });
+        } else {
+          otherStatements.push(statement);
+        }
+      } else {
+        otherStatements.push(statement);
+      }
+    }
+
+    // Generate any other statements first
+    for (const statement of otherStatements) {
+      this.generateStatement(statement);
+    }
+
+    // Generate struct initialization
+    this.writeIndent();
+    this.output += 'Self {\n';
+    this.indentLevel++;
+
+    for (let i = 0; i < fieldAssignments.length; i++) {
+      this.writeIndent();
+      this.output += fieldAssignments[i].field;
+      this.output += ': ';
+      this.generateExpression(fieldAssignments[i].value);
+      this.output += ',\n';
+    }
+
+    this.indentLevel--;
+    this.writeIndent();
+    this.output += '}\n';
+
+    this.indentLevel--;
+    this.output += '}';
   }
 
   private generateInterfaceDeclaration(node: AST.InterfaceDeclaration): void {
@@ -488,15 +549,25 @@ export class RustCodeGenerator {
   }
 
   private generateBinaryExpression(node: AST.BinaryExpression): void {
-    this.generateExpression(node.left);
+    // Detect string concatenation
+    if (node.operator === '+' && this.isStringExpression(node.left)) {
+      // Generate format!() macro instead
+      this.output += 'format!("{}{}", ';
+      this.generateExpression(node.left);
+      this.output += ', ';
+      this.generateExpression(node.right);
+      this.output += ')';
+    } else {
+      this.generateExpression(node.left);
 
-    // Convert JavaScript operators to Rust equivalents
-    let operator = node.operator;
-    if (operator === '===') operator = '==';
-    if (operator === '!==') operator = '!=';
+      // Convert JavaScript operators to Rust equivalents
+      let operator = node.operator;
+      if (operator === '===') operator = '==';
+      if (operator === '!==') operator = '!=';
 
-    this.output += ' ' + operator + ' ';
-    this.generateExpression(node.right);
+      this.output += ' ' + operator + ' ';
+      this.generateExpression(node.right);
+    }
   }
 
   private generateUnaryExpression(node: AST.UnaryExpression): void {
@@ -644,7 +715,7 @@ export class RustCodeGenerator {
   private generateTSType(tsType: AST.TSType): void {
     switch (tsType.type) {
       case 'TSStringKeyword':
-        this.output += '&str';
+        this.output += 'String';
         break;
       case 'TSNumberKeyword':
         this.output += 'f64';
@@ -668,7 +739,7 @@ export class RustCodeGenerator {
         const typeName = tsType.typeName.name;
         switch (typeName) {
           case 'string':
-            this.output += '&str';
+            this.output += 'String';
             break;
           case 'number':
             this.output += 'f64';
@@ -711,6 +782,23 @@ export class RustCodeGenerator {
 
   private hasDecoration(node: AST.BaseNode, keyword: string): boolean {
     return node.decorations?.some(d => d.keyword === keyword) || false;
+  }
+
+  private isStringExpression(node: AST.Expression): boolean {
+    // Check if the expression is likely to be a string
+    if (node.type === 'StringLiteral') {
+      return true;
+    }
+    // Check if it's a binary expression with string concatenation
+    if (node.type === 'BinaryExpression' && node.operator === '+') {
+      return this.isStringExpression(node.left) || this.isStringExpression(node.right);
+    }
+    // Check if it's a call to a string method or format!
+    if (node.type === 'CallExpression') {
+      // Could be a string-returning function, be conservative
+      return false;
+    }
+    return false;
   }
 
   private writeIndent(): void {
