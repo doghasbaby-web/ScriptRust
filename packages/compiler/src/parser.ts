@@ -112,6 +112,10 @@ export class Parser {
     const isAsync = this.previous().type === TokenType.ASYNC;
     const id = this.consume(TokenType.IDENTIFIER, 'Expected function name');
 
+    // Save function decorations before parsing parameters
+    const decorations = this.pendingDecorations;
+    this.pendingDecorations = [];
+
     this.consume(TokenType.LPAREN, 'Expected (');
     const params = this.parameters();
     this.consume(TokenType.RPAREN, 'Expected )');
@@ -123,9 +127,6 @@ export class Parser {
 
     this.consume(TokenType.LBRACE, 'Expected {');
     const body = this.blockStatement();
-
-    const decorations = this.pendingDecorations;
-    this.pendingDecorations = [];
 
     return {
       type: 'FunctionDeclaration',

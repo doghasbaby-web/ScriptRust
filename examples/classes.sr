@@ -1,59 +1,59 @@
 // Class-based Programming with Decorations
 
-[xxx, immutable: mathematical constant]
+/* xxx, immutable: mathematical constant */
 const PI: number = 3.14159;
 
 class Shape {
-  [xxx, immutable: shape type]
+  /* xxx, immutable: shape type */
   type: string;
 
   constructor(type: string) {
     this.type = type;
   }
 
-  [xxx, pure: no side effects]
+  /* xxx, pure: no side effects */
   getType(): string {
     return this.type;
   }
 }
 
 class Circle {
-  [xxx, immutable: radius value]
+  /* xxx, immutable: radius value */
   radius: number;
 
-  constructor([xxx, immutable: r] r: number) {
+  constructor(/* xxx, immutable: r */ r: number) {
     this.radius = r;
   }
 
-  [xxx, pure: mathematical calculation]
+  /* xxx, pure: mathematical calculation */
   area(): number {
     return PI * this.radius * this.radius;
   }
 
-  [xxx, pure: mathematical calculation]
+  /* xxx, pure: mathematical calculation */
   circumference(): number {
     return 2 * PI * this.radius;
   }
 }
 
 class Rectangle {
-  [xxx, immutable: width]
+  /* xxx, immutable: width */
   width: number;
 
-  [xxx, immutable: height]
+  /* xxx, immutable: height */
   height: number;
 
-  constructor([xxx, immutable: w] w: number, [xxx, immutable: h] h: number) {
+  constructor(/* xxx, immutable: w */ w: number, /* xxx, immutable: h */ h: number) {
     this.width = w;
     this.height = h;
   }
 
-  [xxx, pure: mathematical calculation]
+  /* xxx, pure: mathematical calculation */
   area(): number {
     return this.width * this.height;
   }
 
-  [xxx, pure: mathematical calculation]
+  /* xxx, pure: mathematical calculation */
   perimeter(): number {
     return 2 * (this.width + this.height);
   }

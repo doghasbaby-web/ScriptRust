@@ -98,11 +98,9 @@ export class CodeGenerator {
 
       // Add Rust-style decorations as comments
       if (decl.id.decorations && decl.id.decorations.length > 0) {
-        this.output += '/* ';
         for (const decoration of decl.id.decorations) {
-          this.output += `[${decoration.keyword}: ${decoration.description}] `;
+          this.output += `/* xxx, ${decoration.keyword}: ${decoration.description} */ `;
         }
-        this.output += '*/ ';
       }
 
       this.output += decl.id.name;
@@ -121,12 +119,10 @@ export class CodeGenerator {
 
     // Add Rust-style decorations as comments
     if (node.decorations && node.decorations.length > 0) {
-      this.output += '/* ';
       for (const decoration of node.decorations) {
-        this.output += `[${decoration.keyword}: ${decoration.description}] `;
+        this.output += `/* xxx, ${decoration.keyword}: ${decoration.description} */\n`;
+        this.writeIndent();
       }
-      this.output += '*/\n';
-      this.writeIndent();
     }
 
     if (node.isAsync) {
@@ -150,12 +146,10 @@ export class CodeGenerator {
 
     // Add Rust-style decorations as comments
     if (node.decorations && node.decorations.length > 0) {
-      this.output += '/* ';
       for (const decoration of node.decorations) {
-        this.output += `[${decoration.keyword}: ${decoration.description}] `;
+        this.output += `/* xxx, ${decoration.keyword}: ${decoration.description} */\n`;
+        this.writeIndent();
       }
-      this.output += '*/\n';
-      this.writeIndent();
     }
 
     this.output += `class ${node.id.name}`;
@@ -172,12 +166,10 @@ export class CodeGenerator {
         this.writeIndent();
 
         if (member.value.decorations && member.value.decorations.length > 0) {
-          this.output += '/* ';
           for (const decoration of member.value.decorations) {
-            this.output += `[${decoration.keyword}: ${decoration.description}] `;
+            this.output += `/* xxx, ${decoration.keyword}: ${decoration.description} */\n`;
+            this.writeIndent();
           }
-          this.output += '*/\n';
-          this.writeIndent();
         }
 
         if (member.isStatic) {
@@ -202,12 +194,10 @@ export class CodeGenerator {
         this.writeIndent();
 
         if (member.decorations && member.decorations.length > 0) {
-          this.output += '/* ';
           for (const decoration of member.decorations) {
-            this.output += `[${decoration.keyword}: ${decoration.description}] `;
+            this.output += `/* xxx, ${decoration.keyword}: ${decoration.description} */\n`;
+            this.writeIndent();
           }
-          this.output += '*/\n';
-          this.writeIndent();
         }
 
         if (member.isStatic) {
@@ -387,11 +377,9 @@ export class CodeGenerator {
 
   private generateParameter(param: AST.Parameter): void {
     if (param.id.decorations && param.id.decorations.length > 0) {
-      this.output += '/* ';
       for (const decoration of param.id.decorations) {
-        this.output += `[${decoration.keyword}: ${decoration.description}] `;
+        this.output += `/* xxx, ${decoration.keyword}: ${decoration.description} */ `;
       }
-      this.output += '*/ ';
     }
 
     this.output += param.id.name;
