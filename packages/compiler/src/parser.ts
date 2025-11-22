@@ -2,8 +2,8 @@
  * ScriptRust Parser - Builds AST from tokens
  */
 
-import { Token, TokenType, Decoration } from './lexer';
-import * as AST from './ast';
+import { Token, TokenType, Decoration } from './lexer.js';
+import * as AST from './ast.js';
 
 export class Parser {
   private tokens: Token[];
