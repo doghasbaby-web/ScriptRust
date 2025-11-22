@@ -68,6 +68,50 @@ npm run dev:playground
 # Open http://localhost:5173 in your browser
 ```
 
+## Example: TypeScript to Rust Conversion
+
+Here's a simple example showing how ScriptRust converts TypeScript code with decorations into Rust:
+
+### Original TypeScript (hello.ts)
+
+```typescript
+// Hello World in ScriptRust
+
+/* xxx, immutable: greeting message */
+const message: string = "Hello, ScriptRust!";
+
+/* xxx, pure: simple greeting function */
+function greet(/* xxx, immutable: name */ name: string): string {
+  return "Hello, " + name + "!";
+}
+
+console.log(message);
+console.log(greet("World"));
+console.log(greet("Developer"));
+```
+
+### Generated Rust (hello.rs)
+
+```rust
+let message: &str = "Hello, ScriptRust!";
+
+fn greet(name: &str) -> &str {
+    "Hello, " + name + "!"
+}
+
+println!("{:?}", message);
+
+println!("{:?}", greet("World"));
+
+println!("{:?}", greet("Developer"));
+```
+
+The compiler automatically:
+- Converts TypeScript type annotations to Rust types (`string` → `&str`)
+- Transforms function syntax (`function` → `fn`)
+- Converts `console.log()` to Rust's `println!()` macro
+- Respects immutability decorations (variables are immutable by default in Rust)
+
 ## Example Code
 
 ```scriptrust

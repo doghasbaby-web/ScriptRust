@@ -2,7 +2,7 @@
  * ScriptRust Code Generator - Transpiles AST to JavaScript
  */
 
-import * as AST from './ast';
+import * as AST from './ast.js';
 
 export class CodeGenerator {
   private output: string = '';

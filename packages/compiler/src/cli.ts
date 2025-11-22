@@ -7,7 +7,7 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Compiler } from './compiler';
+import { Compiler } from './compiler.js';
 
 const program = new Command();
 

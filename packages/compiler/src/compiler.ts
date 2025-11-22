@@ -2,11 +2,11 @@
  * ScriptRust Compiler - Main compiler interface
  */
 
-import { Lexer } from './lexer';
-import { Parser } from './parser';
-import { CodeGenerator } from './codegen';
-import { RustCodeGenerator } from './rust-codegen';
-import * as AST from './ast';
+import { Lexer } from './lexer.js';
+import { Parser } from './parser.js';
+import { CodeGenerator } from './codegen.js';
+import { RustCodeGenerator } from './rust-codegen.js';
+import * as AST from './ast.js';
 
 export interface CompilationResult {
   code: string;
@@ -95,4 +95,4 @@ export class Compiler {
 }
 
 export { Lexer, Parser, CodeGenerator, RustCodeGenerator };
-export * from './ast';
+export * from './ast.js';

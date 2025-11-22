@@ -3,7 +3,7 @@
  * Converts TypeScript with decorations to Rust code
  */
 
-import * as AST from './ast';
+import * as AST from './ast.js';
 
 export class RustCodeGenerator {
   private output: string = '';
