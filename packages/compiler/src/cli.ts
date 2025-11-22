@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * ScriptRust CLI - Command-line interface for ScriptRust compiler
+ * ScriptRust CLI - Converts TypeScript files with Rust decorations to Rust code
  */
 
 import { Command } from 'commander';
@@ -13,13 +13,11 @@ const program = new Command();
 
 program
   .name('scriptrust')
-  .description('ScriptRust - A hybrid language combining TypeScript and Rust features')
-  .version('0.1.0');
-
-program
-  .command('run <file>')
-  .description('Compile and run a ScriptRust file')
-  .action((file: string) => {
+  .description('Convert TypeScript with Rust decorations to Rust code')
+  .version('0.1.0')
+  .argument('<file>', 'TypeScript file to convert')
+  .option('-o, --output <file>', 'Output file (defaults to <input>.rs)')
+  .action((file: string, options: { output?: string }) => {
     const filePath = path.resolve(file);
 
     if (!fs.existsSync(filePath)) {
@@ -30,43 +28,7 @@ program
     const source = fs.readFileSync(filePath, 'utf-8');
     const compiler = new Compiler();
 
-    try {
-      const result = compiler.compile(source);
-
-      if (result.errors.length > 0) {
-        console.error('Compilation errors:');
-        for (const error of result.errors) {
-          console.error(`  ${error.message}`);
-        }
-        process.exit(1);
-      }
-
-      // Execute the compiled code
-      const fn = new Function(result.code);
-      fn();
-    } catch (error: any) {
-      console.error(`Runtime error: ${error.message}`);
-      process.exit(1);
-    }
-  });
-
-program
-  .command('compile <file>')
-  .description('Compile a ScriptRust file to JavaScript')
-  .option('-o, --output <file>', 'Output file')
-  .option('-r, --rust', 'Compile to Rust instead of JavaScript')
-  .action((file: string, options: { output?: string; rust?: boolean }) => {
-    const filePath = path.resolve(file);
-
-    if (!fs.existsSync(filePath)) {
-      console.error(`Error: File not found: ${filePath}`);
-      process.exit(1);
-    }
-
-    const source = fs.readFileSync(filePath, 'utf-8');
-    const compiler = new Compiler();
-
-    const result = options.rust ? compiler.compileToRust(source) : compiler.compile(source);
+    const result = compiler.compileToRust(source);
 
     if (result.errors.length > 0) {
       console.error('Compilation errors:');
@@ -76,39 +38,9 @@ program
       process.exit(1);
     }
 
-    if (options.output) {
-      fs.writeFileSync(options.output, result.code);
-      console.log(`Compiled to: ${options.output}`);
-    } else {
-      console.log(result.code);
-    }
-  });
-
-program
-  .command('ast <file>')
-  .description('Print the AST of a ScriptRust file')
-  .action((file: string) => {
-    const filePath = path.resolve(file);
-
-    if (!fs.existsSync(filePath)) {
-      console.error(`Error: File not found: ${filePath}`);
-      process.exit(1);
-    }
-
-    const source = fs.readFileSync(filePath, 'utf-8');
-    const compiler = new Compiler();
-
-    const result = compiler.compile(source);
-
-    if (result.errors.length > 0) {
-      console.error('Compilation errors:');
-      for (const error of result.errors) {
-        console.error(`  ${error.message}`);
-      }
-      process.exit(1);
-    }
-
-    console.log(JSON.stringify(result.ast, null, 2));
+    const outputFile = options.output || filePath.replace(/\.ts$/, '.rs');
+    fs.writeFileSync(outputFile, result.code);
+    console.log(`Converted to Rust: ${outputFile}`);
   });
 
 program.parse();

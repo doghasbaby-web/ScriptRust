@@ -1,7 +1,8 @@
 {
   "name": "@scriptrust/compiler",
   "version": "0.1.0",
-  "description": "ScriptRust compiler and runtime",
+  "description": "Converts TypeScript with Rust decorations to Rust code",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -13,7 +14,7 @@
     "test": "jest",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["scriptrust", "compiler"],
+  "keywords": ["scriptrust", "typescript", "rust", "transpiler"],
   "license": "MIT",
   "dependencies": {
     "commander": "^11.1.0"
