@@ -256,31 +256,50 @@ export class Lexer {
 
     this.advance(); // [
 
-    // Read until : or ]
-    let keyword = '';
-    while (this.position < this.input.length && this.current() !== ':' && this.current() !== ']') {
-      keyword += this.current();
+    // Read first token (should be 'xxx')
+    let firstToken = '';
+    while (this.position < this.input.length && this.current() !== ',' && this.current() !== ':' && this.current() !== ']') {
+      firstToken += this.current();
       this.advance();
     }
 
-    keyword = keyword.trim();
+    firstToken = firstToken.trim();
 
-    if (this.current() === ':') {
-      this.advance(); // :
+    // Check if the first token is 'xxx'
+    if (firstToken === 'xxx' && this.current() === ',') {
+      this.advance(); // ,
 
-      let description = '';
-      while (this.position < this.input.length && this.current() !== ']') {
-        description += this.current();
+      // Skip whitespace after comma
+      while (this.position < this.input.length && (this.current() === ' ' || this.current() === '\t')) {
         this.advance();
       }
 
-      if (this.current() === ']') {
-        this.advance(); // ]
-        description = description.trim();
+      // Read the actual keyword
+      let keyword = '';
+      while (this.position < this.input.length && this.current() !== ':' && this.current() !== ']') {
+        keyword += this.current();
+        this.advance();
+      }
 
-        const decorationValue = JSON.stringify({ keyword, description });
-        this.addToken(TokenType.DECORATION, decorationValue, startLine, startColumn);
-        return true;
+      keyword = keyword.trim();
+
+      if (this.current() === ':') {
+        this.advance(); // :
+
+        let description = '';
+        while (this.position < this.input.length && this.current() !== ']') {
+          description += this.current();
+          this.advance();
+        }
+
+        if (this.current() === ']') {
+          this.advance(); // ]
+          description = description.trim();
+
+          const decorationValue = JSON.stringify({ keyword, description });
+          this.addToken(TokenType.DECORATION, decorationValue, startLine, startColumn);
+          return true;
+        }
       }
     }
 

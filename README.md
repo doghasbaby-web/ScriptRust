@@ -18,7 +18,9 @@ ScriptRust allows you to write code using familiar TypeScript syntax while addin
 
 ### Rust-Style Decorations
 
-Decorations follow the format: `[keyword: description]`
+Decorations follow the format: `[xxx, keyword: description]`
+
+All decorations must begin with the `xxx` keyword prefix for explicit identification.
 
 Common decoration keywords:
 - `immutable` - Mark variables that cannot be reassigned
@@ -70,26 +72,26 @@ npm run dev:playground
 
 ```scriptrust
 // Variable with immutability decoration
-[immutable: This value cannot be changed]
+[xxx, immutable: This value cannot be changed]
 const PI: number = 3.14159;
 
 // Function with ownership decoration
-[ownership: borrowed]
-function calculateArea([immutable: radius] r: number): number {
+[xxx, ownership: borrowed]
+function calculateArea([xxx, immutable: radius] r: number): number {
   return PI * r * r;
 }
 
 // Class with lifetime decorations
 class Buffer {
-  [mut: mutable internal state]
+  [xxx, mut: mutable internal state]
   data: number[] = [];
 
-  [pure: no side effects]
+  [xxx, pure: no side effects]
   length(): number {
     return this.data.length;
   }
 
-  [mut: modifies internal state]
+  [xxx, mut: modifies internal state]
   push(value: number): void {
     this.data.push(value);
   }
@@ -114,29 +116,31 @@ Decorations can be applied to:
 - Function declarations
 - Class members (properties and methods)
 
+All decorations must use the `xxx` keyword prefix:
+
 ```scriptrust
 // Variable decoration
-[immutable: constant value]
+[xxx, immutable: constant value]
 const x: number = 10;
 
 // Parameter decoration
-function foo([mut: can be modified] param: string) {
+function foo([xxx, mut: can be modified] param: string) {
   // ...
 }
 
 // Function decoration
-[pure: no side effects]
+[xxx, pure: no side effects]
 function add(a: number, b: number): number {
   return a + b;
 }
 
 // Class member decorations
 class Example {
-  [mut: mutable field]
+  [xxx, mut: mutable field]
   count: number = 0;
 
-  [ownership: borrowed]
-  method([immutable: param] value: string): void {
+  [xxx, ownership: borrowed]
+  method([xxx, immutable: param] value: string): void {
     // ...
   }
 }

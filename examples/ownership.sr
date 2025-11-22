@@ -1,11 +1,11 @@
 // Ownership and Borrowing Decorations Example
 
-[ownership: owned]
+[xxx, ownership: owned]
 class Resource {
-  [immutable: resource identifier]
+  [xxx, immutable: resource identifier]
   id: string;
 
-  [mut: reference count]
+  [xxx, mut: reference count]
   refCount: number = 1;
 
   constructor(id: string) {
@@ -13,13 +13,13 @@ class Resource {
     console.log("Resource created:", id);
   }
 
-  [ownership: borrowed]
+  [xxx, ownership: borrowed]
   borrow(): void {
     this.refCount = this.refCount + 1;
     console.log("Resource borrowed:", this.id, "- refs:", this.refCount);
   }
 
-  [ownership: borrowed]
+  [xxx, ownership: borrowed]
   release(): void {
     this.refCount = this.refCount - 1;
     console.log("Resource released:", this.id, "- refs:", this.refCount);
@@ -29,17 +29,17 @@ class Resource {
     }
   }
 
-  [pure: no side effects]
+  [xxx, pure: no side effects]
   getId(): string {
     return this.id;
   }
 }
 
 // Usage
-[ownership: owned]
+[xxx, ownership: owned]
 const resource1 = new Resource("DB-Connection-1");
 
-[ownership: borrowed]
+[xxx, ownership: borrowed]
 const borrowed = resource1;
 borrowed.borrow();
 
