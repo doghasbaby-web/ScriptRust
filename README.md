@@ -1,10 +1,10 @@
 # ScriptRust
 
-A hybrid programming language that combines TypeScript syntax with Rust-inspired features through a decoration system.
+TypeScript with Rust decorations - a tool that converts TypeScript files enhanced with Rust-inspired decorations into Rust code.
 
 ## Overview
 
-ScriptRust allows you to write code using familiar TypeScript syntax while adding Rust-like features through decorations. These decorations use a comment-style format: `/* xxx, keyword: description */` to annotate variables, functions, and class members with Rust-inspired semantics.
+ScriptRust is pure TypeScript enhanced with Rust-like features through a decoration system. Files remain standard `.ts` TypeScript files, but use special comment-style decorations: `/* xxx, keyword: description */` to annotate variables, functions, and class members with Rust-inspired semantics. The `scriptrust` command converts these decorated TypeScript files into Rust code.
 
 ## Features
 
@@ -49,14 +49,14 @@ npm run build
 ### CLI
 
 ```bash
-# Run a ScriptRust file
-npx scriptrust run examples/hello.sr
+# Convert a TypeScript file with Rust decorations to Rust code
+npx scriptrust examples/hello.ts
 
-# Compile to JavaScript
-npx scriptrust compile examples/hello.sr -o output.js
+# Specify custom output file
+npx scriptrust examples/hello.ts -o output.rs
 
-# View AST
-npx scriptrust ast examples/hello.sr
+# Output defaults to <input>.rs if not specified
+npx scriptrust examples/ownership.ts  # Creates ownership.rs
 ```
 
 ### Playground
@@ -234,10 +234,10 @@ While decorations are currently compiled to comments, they provide a foundation 
 ## Examples
 
 See the `examples/` directory for more complete examples:
-- `hello.sr` - Basic hello world
-- `ownership.sr` - Ownership decorations
-- `classes.sr` - Class-based examples
-- `async.sr` - Async/await patterns
+- `hello.ts` - Basic hello world
+- `ownership.ts` - Ownership decorations
+- `classes.ts` - Class-based examples
+- `async.ts` - Async/await patterns
 
 ## Contributing
 

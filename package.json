@@ -1,7 +1,7 @@
 {
   "name": "scriptrust",
   "version": "0.1.0",
-  "description": "A hybrid programming language combining TypeScript and Rust features",
+  "description": "Convert TypeScript with Rust decorations to Rust code",
   "private": true,
   "workspaces": [
     "packages/compiler",
@@ -13,7 +13,7 @@
     "dev:playground": "npm run dev -w packages/playground",
     "test": "npm run test -w packages/compiler"
   },
-  "keywords": ["scriptrust", "typescript", "rust", "compiler", "programming-language"],
+  "keywords": ["scriptrust", "typescript", "rust", "compiler", "transpiler"],
   "author": "",
   "license": "MIT"
 }
