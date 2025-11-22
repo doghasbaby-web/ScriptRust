@@ -1,21 +1,21 @@
 // Async/Await with Decorations
 
-[pure: simulates async operation]
-async function fetchData([immutable: id] id: number): Promise<string> {
+[xxx, pure: simulates async operation]
+async function fetchData([xxx, immutable: id] id: number): Promise<string> {
   return "Data for ID: " + id;
 }
 
-[pure: processes fetched data]
-async function processData([immutable: data] data: string): Promise<string> {
+[xxx, pure: processes fetched data]
+async function processData([xxx, immutable: data] data: string): Promise<string> {
   return data + " (processed)";
 }
 
 class DataManager {
-  [mut: internal cache]
+  [xxx, mut: internal cache]
   cache: Map<number, string> = new Map();
 
-  [ownership: borrowed]
-  async getData([immutable: id] id: number): Promise<string> {
+  [xxx, ownership: borrowed]
+  async getData([xxx, immutable: id] id: number): Promise<string> {
     if (this.cache.has(id)) {
       console.log("Cache hit for ID:", id);
       return this.cache.get(id)!;
@@ -29,7 +29,7 @@ class DataManager {
     return processed;
   }
 
-  [pure: no side effects]
+  [xxx, pure: no side effects]
   getCacheSize(): number {
     return this.cache.size;
   }

@@ -42,18 +42,20 @@ Hello, Developer!
 
 ---
 
-### ✅ Requirement 2: Decoration Format `[keyword: description]`
+### ✅ Requirement 2: Decoration Format `[xxx, keyword: description]`
 **Status**: **FULLY IMPLEMENTED**
+
+**Format**: All decorations must begin with the `xxx` keyword prefix for explicit identification.
 
 **Supported Keywords**: immutable, mut, ownership, pure, unsafe, lifetime
 
 **Working Example**:
 ```scriptrust
-[immutable: greeting message]
+[xxx, immutable: greeting message]
 const message: string = "Hello, ScriptRust!";
 
-[pure: simple greeting function]
-function greet([immutable: name] name: string): string {
+[xxx, pure: simple greeting function]
+function greet([xxx, immutable: name] name: string): string {
   return "Hello, " + name + "!";
 }
 ```
@@ -97,9 +99,9 @@ $ npx scriptrust run examples/hello.sr
 
 **Compiled JavaScript Output**:
 ```javascript
-const /* [immutable: greeting message] */ message = 'Hello, ScriptRust!';
+const /* [xxx, immutable: greeting message] */ message = 'Hello, ScriptRust!';
 
-function greet(/* [pure: simple greeting function] [immutable: name] */ name) {
+function greet(/* [xxx, pure: simple greeting function] [xxx, immutable: name] */ name) {
   return 'Hello, ' + name + '!';
 }
 ```
@@ -134,10 +136,10 @@ $ grep -r "toRust\|rustgen" packages/
 
 **Input** (`hello.sr`):
 ```scriptrust
-[immutable: greeting]
+[xxx, immutable: greeting]
 const message: string = "Hello";
 
-[mut: counter]
+[xxx, mut: counter]
 let count: number = 0;
 ```
 
@@ -242,7 +244,7 @@ File: packages/playground/src/App.tsx:3:9
 
 ```scriptrust
 // Source
-[immutable: value]
+[xxx, immutable: value]
 const x: number = 5;
 
 // AST (simplified)
@@ -258,7 +260,7 @@ const x: number = 5;
 }
 
 // Generated JavaScript
-const /* [immutable: value] */ x = 5;
+const /* [xxx, immutable: value] */ x = 5;
 ```
 
 **What's Missing**: Translation of decorations to Rust semantics
@@ -370,14 +372,14 @@ export class RustCodeGenerator {
 
 ```typescript
 // Input ScriptRust
-[immutable: greeting]
+[xxx, immutable: greeting]
 const message: string = "Hello";
 
-[mut: counter]
+[xxx, mut: counter]
 let count: number = 0;
 
-[ownership: borrowed]
-function greet([immutable: name] name: string): string {
+[xxx, ownership: borrowed]
+function greet([xxx, immutable: name] name: string): string {
   return "Hello, " + name;
 }
 ```
