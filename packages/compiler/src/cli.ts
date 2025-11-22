@@ -7,6 +7,7 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { Compiler } from './compiler.js';
 
 const program = new Command();
@@ -41,6 +42,16 @@ program
     const outputFile = options.output || filePath.replace(/\.ts$/, '.rs');
     fs.writeFileSync(outputFile, result.code);
     console.log(`Converted to Rust: ${outputFile}`);
+
+    // Validate generated Rust code with rustc
+    try {
+      execSync(`rustc --crate-type lib ${outputFile} -o /tmp/check.out`,
+        { stdio: 'pipe' });
+      console.log('✓ Generated Rust code is valid');
+    } catch (error: any) {
+      console.warn('⚠ Warning: Generated Rust code may have errors:');
+      console.warn(error.stderr?.toString());
+    }
   });
 
 program.parse();

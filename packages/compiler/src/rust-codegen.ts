@@ -8,15 +8,26 @@ import * as AST from './ast.js';
 export class RustCodeGenerator {
   private output: string = '';
   private indentLevel: number = 0;
+  private scopeLevel: number = 0;  // Track scope depth for variable declarations
 
   generate(program: AST.Program): string {
     this.output = '';
     this.indentLevel = 0;
+    this.scopeLevel = 0;
+
+    // Wrap everything in main() for executable code
+    this.output += 'fn main() {\n';
+    this.indentLevel++;
+    this.scopeLevel++;
 
     for (const statement of program.body) {
       this.generateStatement(statement);
       this.output += '\n';
     }
+
+    this.indentLevel--;
+    this.scopeLevel--;
+    this.output += '}\n';
 
     return this.output;
   }
@@ -92,15 +103,26 @@ export class RustCodeGenerator {
       const isMutable = this.hasDecoration(decl.id, 'mut');
       const isImmutable = this.hasDecoration(decl.id, 'immutable');
 
-      // In Rust, variables are immutable by default
-      this.output += 'let ';
+      if (this.scopeLevel === 0) {
+        // Module-level declaration (when not wrapped in main)
+        if (node.kind === 'const') {
+          this.output += 'const ';
+          this.output += decl.id.name.toUpperCase();  // Constants are UPPERCASE
+        } else {
+          this.output += 'static mut ';  // Or use lazy_static for mutable statics
+          this.output += decl.id.name.toUpperCase();
+        }
+      } else {
+        // Function-level declaration
+        this.output += 'let ';
 
-      // Only add mut if explicitly marked as mutable
-      if (isMutable && !isImmutable) {
-        this.output += 'mut ';
+        // Only add mut if explicitly marked as mutable
+        if (isMutable && !isImmutable) {
+          this.output += 'mut ';
+        }
+
+        this.output += decl.id.name;
       }
-
-      this.output += decl.id.name;
 
       // Type annotation
       if (decl.typeAnnotation) {
@@ -442,12 +464,14 @@ export class RustCodeGenerator {
   private generateBlockStatement(node: AST.BlockStatement, addIndent: boolean = true): void {
     this.output += '{\n';
     this.indentLevel++;
+    this.scopeLevel++;
 
     for (const statement of node.body) {
       this.generateStatement(statement);
     }
 
     this.indentLevel--;
+    this.scopeLevel--;
     if (addIndent) this.writeIndent();
     this.output += '}';
   }
@@ -551,11 +575,26 @@ export class RustCodeGenerator {
   private generateBinaryExpression(node: AST.BinaryExpression): void {
     // Detect string concatenation
     if (node.operator === '+' && this.isStringExpression(node.left)) {
-      // Generate format!() macro instead
-      this.output += 'format!("{}{}", ';
-      this.generateExpression(node.left);
-      this.output += ', ';
-      this.generateExpression(node.right);
+      const parts = this.collectStringConcatParts(node);
+
+      let formatStr = '';
+      const args: AST.Expression[] = [];
+
+      for (const part of parts) {
+        if (part.type === 'StringLiteral') {
+          // Remove surrounding quotes and add to format string
+          formatStr += part.value;
+        } else {
+          formatStr += '{}';
+          args.push(part);
+        }
+      }
+
+      this.output += `format!("${formatStr}"`;
+      for (const arg of args) {
+        this.output += ', ';
+        this.generateExpression(arg);
+      }
       this.output += ')';
     } else {
       this.generateExpression(node.left);
@@ -782,6 +821,18 @@ export class RustCodeGenerator {
 
   private hasDecoration(node: AST.BaseNode, keyword: string): boolean {
     return node.decorations?.some(d => d.keyword === keyword) || false;
+  }
+
+  private collectStringConcatParts(node: AST.Expression): AST.Expression[] {
+    if (node.type !== 'BinaryExpression' || node.operator !== '+') {
+      return [node];
+    }
+
+    const parts: AST.Expression[] = [];
+    const left = this.collectStringConcatParts(node.left);
+    const right = this.collectStringConcatParts(node.right);
+
+    return [...left, ...right];
   }
 
   private isStringExpression(node: AST.Expression): boolean {
