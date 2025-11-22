@@ -160,16 +160,14 @@ export class Lexer {
       }
 
       if (char === '/' && this.peek() === '*') {
-        this.readBlockComment();
-        continue;
-      }
-
-      // Decorations [keyword: description]
-      if (char === '[') {
+        // Check if this is a decoration comment /* xxx, ... */
         const decoration = this.tryReadDecoration();
         if (decoration) {
           continue;
         }
+        // Not a decoration, treat as regular block comment
+        this.readBlockComment();
+        continue;
       }
 
       // Strings
@@ -254,11 +252,17 @@ export class Lexer {
     const startLine = this.line;
     const startColumn = this.column;
 
-    this.advance(); // [
+    this.advance(); // /
+    this.advance(); // *
+
+    // Skip whitespace after /*
+    while (this.position < this.input.length && (this.current() === ' ' || this.current() === '\t')) {
+      this.advance();
+    }
 
     // Read first token (should be 'xxx')
     let firstToken = '';
-    while (this.position < this.input.length && this.current() !== ',' && this.current() !== ':' && this.current() !== ']') {
+    while (this.position < this.input.length && this.current() !== ',' && this.current() !== '*' && this.current() !== ' ' && this.current() !== '\t') {
       firstToken += this.current();
       this.advance();
     }
@@ -276,7 +280,7 @@ export class Lexer {
 
       // Read the actual keyword
       let keyword = '';
-      while (this.position < this.input.length && this.current() !== ':' && this.current() !== ']') {
+      while (this.position < this.input.length && this.current() !== ':' && this.current() !== '*') {
         keyword += this.current();
         this.advance();
       }
@@ -286,14 +290,23 @@ export class Lexer {
       if (this.current() === ':') {
         this.advance(); // :
 
+        // Skip whitespace after :
+        while (this.position < this.input.length && (this.current() === ' ' || this.current() === '\t')) {
+          this.advance();
+        }
+
         let description = '';
-        while (this.position < this.input.length && this.current() !== ']') {
+        while (this.position < this.input.length) {
+          if (this.current() === '*' && this.peek() === '/') {
+            break;
+          }
           description += this.current();
           this.advance();
         }
 
-        if (this.current() === ']') {
-          this.advance(); // ]
+        if (this.current() === '*' && this.peek() === '/') {
+          this.advance(); // *
+          this.advance(); // /
           description = description.trim();
 
           const decorationValue = JSON.stringify({ keyword, description });
@@ -303,7 +316,7 @@ export class Lexer {
       }
     }
 
-    // Not a decoration, reset and treat [ as a bracket
+    // Not a decoration, reset
     this.position = start;
     this.line = startLine;
     this.column = startColumn;

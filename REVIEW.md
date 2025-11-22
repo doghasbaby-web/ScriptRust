@@ -42,20 +42,20 @@ Hello, Developer!
 
 ---
 
-### ✅ Requirement 2: Decoration Format `[xxx, keyword: description]`
+### ✅ Requirement 2: Decoration Format `/* xxx, keyword: description */`
 **Status**: **FULLY IMPLEMENTED**
 
-**Format**: All decorations must begin with the `xxx` keyword prefix for explicit identification.
+**Format**: All decorations must begin with the `xxx` keyword prefix for explicit identification and use comment-style syntax.
 
 **Supported Keywords**: immutable, mut, ownership, pure, unsafe, lifetime
 
 **Working Example**:
 ```scriptrust
-[xxx, immutable: greeting message]
+/* xxx, immutable: greeting message */
 const message: string = "Hello, ScriptRust!";
 
-[xxx, pure: simple greeting function]
-function greet([xxx, immutable: name] name: string): string {
+/* xxx, pure: simple greeting function */
+function greet(/* xxx, immutable: name */ name: string): string {
   return "Hello, " + name + "!";
 }
 ```
@@ -99,9 +99,10 @@ $ npx scriptrust run examples/hello.sr
 
 **Compiled JavaScript Output**:
 ```javascript
-const /* [xxx, immutable: greeting message] */ message = 'Hello, ScriptRust!';
+/* xxx, immutable: greeting message */ const message = 'Hello, ScriptRust!';
 
-function greet(/* [xxx, pure: simple greeting function] [xxx, immutable: name] */ name) {
+/* xxx, pure: simple greeting function */
+function greet(/* xxx, immutable: name */ name) {
   return 'Hello, ' + name + '!';
 }
 ```
@@ -136,10 +137,10 @@ $ grep -r "toRust\|rustgen" packages/
 
 **Input** (`hello.sr`):
 ```scriptrust
-[xxx, immutable: greeting]
+/* xxx, immutable: greeting */
 const message: string = "Hello";
 
-[xxx, mut: counter]
+/* xxx, mut: counter */
 let count: number = 0;
 ```
 
@@ -236,7 +237,7 @@ File: packages/playground/src/App.tsx:3:9
 
 **How Decorations Work Currently**:
 
-1. **Lexer Stage**: Recognizes `[keyword: description]` and creates DECORATION tokens
+1. **Lexer Stage**: Recognizes `/* xxx, keyword: description */` and creates DECORATION tokens
 2. **Parser Stage**: Collects decorations and attaches them to AST nodes
 3. **CodeGen Stage**: Emits decorations as JavaScript comments
 
@@ -244,7 +245,7 @@ File: packages/playground/src/App.tsx:3:9
 
 ```scriptrust
 // Source
-[xxx, immutable: value]
+/* xxx, immutable: value */
 const x: number = 5;
 
 // AST (simplified)
@@ -260,7 +261,7 @@ const x: number = 5;
 }
 
 // Generated JavaScript
-const /* [xxx, immutable: value] */ x = 5;
+/* xxx, immutable: value */ const x = 5;
 ```
 
 **What's Missing**: Translation of decorations to Rust semantics
@@ -372,14 +373,14 @@ export class RustCodeGenerator {
 
 ```typescript
 // Input ScriptRust
-[xxx, immutable: greeting]
+/* xxx, immutable: greeting */
 const message: string = "Hello";
 
-[xxx, mut: counter]
+/* xxx, mut: counter */
 let count: number = 0;
 
-[xxx, ownership: borrowed]
-function greet([xxx, immutable: name] name: string): string {
+/* xxx, ownership: borrowed */
+function greet(/* xxx, immutable: name */ name: string): string {
   return "Hello, " + name;
 }
 ```
