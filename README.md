@@ -215,8 +215,7 @@ npm test
 
 1. **Lexical Analysis**: The lexer tokenizes ScriptRust source code, including decorations
 2. **Parsing**: The parser builds an Abstract Syntax Tree (AST) with decoration metadata
-3. **Code Generation**: The code generator transpiles the AST to JavaScript, preserving decorations as comments
-4. **Execution**: The generated JavaScript can be executed in any JavaScript runtime
+3. **Code Generation**: The code generator generates Rust code directly from the AST, translating TypeScript syntax and decorations into equivalent Rust constructs
 
 ## Decoration Philosophy
 
