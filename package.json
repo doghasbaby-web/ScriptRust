@@ -1,0 +1,19 @@
+{
+  "name": "scriptrust",
+  "version": "0.1.0",
+  "description": "A hybrid programming language combining TypeScript and Rust features",
+  "private": true,
+  "workspaces": [
+    "packages/compiler",
+    "packages/playground"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/compiler && npm run build -w packages/playground",
+    "dev:compiler": "npm run dev -w packages/compiler",
+    "dev:playground": "npm run dev -w packages/playground",
+    "test": "npm run test -w packages/compiler"
+  },
+  "keywords": ["scriptrust", "typescript", "rust", "compiler", "programming-language"],
+  "author": "",
+  "license": "MIT"
+}

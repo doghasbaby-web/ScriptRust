@@ -1,0 +1,49 @@
+// Ownership and Borrowing Decorations Example
+
+[ownership: owned]
+class Resource {
+  [immutable: resource identifier]
+  id: string;
+
+  [mut: reference count]
+  refCount: number = 1;
+
+  constructor(id: string) {
+    this.id = id;
+    console.log("Resource created:", id);
+  }
+
+  [ownership: borrowed]
+  borrow(): void {
+    this.refCount = this.refCount + 1;
+    console.log("Resource borrowed:", this.id, "- refs:", this.refCount);
+  }
+
+  [ownership: borrowed]
+  release(): void {
+    this.refCount = this.refCount - 1;
+    console.log("Resource released:", this.id, "- refs:", this.refCount);
+
+    if (this.refCount === 0) {
+      console.log("Resource freed:", this.id);
+    }
+  }
+
+  [pure: no side effects]
+  getId(): string {
+    return this.id;
+  }
+}
+
+// Usage
+[ownership: owned]
+const resource1 = new Resource("DB-Connection-1");
+
+[ownership: borrowed]
+const borrowed = resource1;
+borrowed.borrow();
+
+console.log("Using resource:", borrowed.getId());
+
+borrowed.release();
+resource1.release();

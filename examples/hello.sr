@@ -1,0 +1,13 @@
+// Hello World in ScriptRust
+
+[immutable: greeting message]
+const message: string = "Hello, ScriptRust!";
+
+[pure: simple greeting function]
+function greet([immutable: name] name: string): string {
+  return "Hello, " + name + "!";
+}
+
+console.log(message);
+console.log(greet("World"));
+console.log(greet("Developer"));
