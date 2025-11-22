@@ -2,37 +2,268 @@
 
 **Review Date**: 2025-11-22
 **Reviewer**: Claude Code
-**Status**: ✅ **SUBSTANTIALLY COMPLETE** (Major improvements since last review)
+**Status**: ✅ **SIGNIFICANT PROGRESS** (Tests passing, multiple critical fixes implemented)
 
 ---
 
 ## Executive Summary
 
-The ScriptRust implementation has achieved **significant progress** since the previous review. The critical missing feature - **Rust code generation** - has been **fully implemented**, bringing the project from ~75% to **~92% completion**. The compiler successfully transpiles TypeScript with Rust decorations into actual Rust code.
+ScriptRust has made **substantial improvements** since the last review. The project now has **100% passing tests (29/29)**, proper Jest configuration, working builds, and enhanced Rust code generation. However, **generated Rust code still fails to compile** due to several systematic issues that need addressing.
 
 ### Quick Assessment
 
-✅ **Working**: TypeScript compatibility, decoration parsing, JavaScript compilation, **Rust code generation**, CLI tool, playground UI
-⚠️ **Issues**: Generated Rust code has minor syntax errors, Jest test configuration needs fixing, decoration format inconsistency
-🎯 **Overall**: Production-ready with minor fixes needed
+✅ **Working**: TypeScript compatibility, decoration parsing, JavaScript compilation, Rust code generation (partial), CLI tool, playground UI, test suite
+⚠️ **Issues**: Generated Rust code won't compile (module-level `let`, missing braces, type errors, nested `format!()` calls), playground example uses old decoration format
+🎯 **Overall**: Core functionality complete, needs refinement for production-ready Rust output
 
 ---
 
-## Key Changes Since Last Review
+## Key Improvements Since Last Review
 
-### ✅ CRITICAL IMPROVEMENTS
+### ✅ MAJOR IMPROVEMENTS
 
-1. **Rust Code Generation IMPLEMENTED** (was missing)
-   - Fully functional `RustCodeGenerator` class (720 lines)
-   - CLI command `npx scriptrust <file.ts>` generates `.rs` files
-   - Comprehensive test suite with 20+ test cases
-   - Type mapping: `string → &str`, `number → f64`, `boolean → bool`, arrays → `Vec<T>`
-   - Decoration-aware code generation
+1. **Jest Configuration FIXED** ✨
+   - Previously: Tests couldn't run ("Cannot find module './lexer.js'")
+   - Now: All 29 tests passing with proper ES module configuration
+   - File: `packages/compiler/jest.config.cjs` properly configured
 
-2. **Playground Build FIXED** (was failing)
-   - Builds successfully with Vite
-   - Production bundle: 212.94 kB (gzipped: 62.45 kB)
-   - All UI components working
+2. **TypeScript Build FIXED** ✨
+   - Previously: Build failed due to missing dependencies
+   - Now: Clean compilation with all dependencies installed
+   - All type definitions resolved (`@types/node`, `commander`, etc.)
+
+3. **Constructor Generation IMPROVED** ✨
+   - Previously: Generated invalid `self.field = value` in constructor body
+   - Now: Generates proper `Self { field: value, ... }` struct initialization
+   - File: `packages/compiler/src/rust-codegen.ts:276-329`
+
+4. **String Concatenation Partially FIXED** ⚠️
+   - Previously: Generated `"Hello, " + name` (invalid Rust)
+   - Now: Generates `format!()` macro calls
+   - Issue: Creates nested `format!()` calls instead of single efficient call
+   - Example: `format!("{}{}", format!("{}{}", "Hello, ", name), "!")`
+   - Should be: `format!("Hello, {}!", name)`
+
+5. **Type Mapping CHANGED**
+   - Previously: `string → &str`
+   - Now: `string → String` (owned type)
+   - Tradeoff: More flexible but less idiomatic for literals
+
+---
+
+## Critical Issues Found
+
+### 🔴 HIGH Priority - Generated Rust Code Won't Compile
+
+#### Issue 1: Module-Level `let` Statements
+**Severity**: CRITICAL
+**Status**: ❌ FAILS COMPILATION
+
+**Problem**: Generated code uses `let` at module level, which is invalid in Rust.
+
+```rust
+// Generated (INVALID):
+let PI: f64 = 3.14159;
+
+let circle = Circle::new(5);
+
+// Rust Error:
+// error: expected item, found keyword `let`
+// `let` cannot be used for global variables
+```
+
+**Impact**: **100% of generated Rust files fail to compile with rustc**
+
+**Root Cause**: `RustCodeGenerator` doesn't track scope context. It generates all variable declarations as `let` statements regardless of whether they're at module level or inside a function.
+
+**Fix Required**:
+- Detect if statement is at module level (Program body) vs function body
+- For module-level `const`: Generate `const CONSTANT: Type = value;`
+- For module-level variables: Wrap in `fn main() { ... }` or use `static`
+- For function-level: Keep as `let`/`let mut`
+
+**Files Affected**:
+- `/home/user/ScriptRust/packages/compiler/src/rust-codegen.ts:87-119` (generateVariableDeclaration)
+- All generated `.rs` files in `/home/user/ScriptRust/examples/`
+
+---
+
+#### Issue 2: Missing Closing Braces in impl Blocks
+**Severity**: HIGH
+**Status**: ❌ SYNTAX ERROR
+
+**Problem**: Method definitions in impl blocks are missing closing braces.
+
+```rust
+// Generated (INVALID):
+impl Circle {
+    pub fn new(r: f64) -> Self {
+        Self {
+            radius: r,
+        }
+}    // <- Missing } here!
+    pub fn area(&self) -> f64 {
+        PI * self.radius * self.radius
+}    // <- Missing } here!
+}
+```
+
+**Impact**: Rust parser fails on all class-based examples
+
+**Root Cause**: `generateMethodDefinition` doesn't add newline after the closing brace of the method body
+
+**Fix Required**:
+```typescript
+// In rust-codegen.ts:273, after generateBlockStatement
+this.output += '\n';
+// Should be:
+this.output += '}\n';  // Add explicit closing brace
+```
+
+**Location**: `packages/compiler/src/rust-codegen.ts:221-274`
+
+---
+
+#### Issue 3: Nested format!() Calls for String Concatenation
+**Severity**: MEDIUM
+**Status**: ⚠️ COMPILES BUT INEFFICIENT
+
+**Problem**: String concatenation with multiple `+` operators creates deeply nested `format!()` calls.
+
+```rust
+// TypeScript:
+return "Hello, " + name + "!";
+
+// Generated (INEFFICIENT):
+format!("{}{}", format!("{}{}", "Hello, ", name), "!")
+
+// Should be (OPTIMAL):
+format!("Hello, {}!", name)
+```
+
+**Impact**:
+- Compiles but allocates unnecessary intermediate strings
+- Performance degradation
+- Poor readability
+
+**Root Cause**: `generateBinaryExpression` recursively wraps each `+` operation in a separate `format!()` call instead of collecting all parts and building a single format string.
+
+**Fix Required**:
+- Detect chains of string concatenation
+- Collect all literal and expression parts
+- Build single format string with proper placeholders
+- Example: `"Hello, " + name + "!"` → collect `["Hello, ", name, "!"]` → generate `format!("Hello, {}!", name)`
+
+**Location**: `packages/compiler/src/rust-codegen.ts:551-571`
+
+---
+
+#### Issue 4: Type Errors in Generated Code
+**Severity**: HIGH
+**Status**: ⚠️ WILL FAIL BORROW CHECKER
+
+**Problem**: Methods return owned `String` but try to return borrowed `&str` from `self`.
+
+```rust
+// Generated (TYPE ERROR):
+pub fn getType(&self) -> String {
+    self.type  // Error: expected String, found &String
+}
+
+// Should be one of:
+pub fn getType(&self) -> String {
+    self.type.clone()
+}
+// OR:
+pub fn getType(&self) -> &str {
+    &self.type
+}
+```
+
+**Impact**: Borrow checker errors, code won't compile in strict mode
+
+**Fix Required**:
+- When returning a field of type `String`, use `.clone()` or return reference
+- Update type mapping logic to understand ownership semantics
+
+**Location**: `packages/compiler/src/rust-codegen.ts:710-781` (type generation)
+
+---
+
+#### Issue 5: Operator Precedence Error
+**Severity**: MEDIUM
+**Status**: ❌ LOGIC ERROR
+
+**Problem**: Mathematical operator precedence not preserved in generated code.
+
+```rust
+// TypeScript (intended):
+perimeter(): number {
+  return 2 * (this.width + this.height);
+}
+
+// Generated (WRONG):
+pub fn perimeter(&self) -> f64 {
+    2 * self.width + self.height  // Means (2 * width) + height
+}
+
+// Should be:
+pub fn perimeter(&self) -> f64 {
+    2 * (self.width + self.height)
+}
+```
+
+**Impact**: Calculation produces incorrect results
+
+**Root Cause**: Binary expression generation doesn't preserve parentheses from original AST
+
+**Fix Required**: Add parenthesis tracking to AST or always emit parentheses for binary expressions with different operators
+
+---
+
+### 🟡 MEDIUM Priority
+
+#### Issue 6: Playground Example Uses Old Decoration Format
+**Severity**: MEDIUM
+**Status**: ❌ CONFUSING FOR USERS
+
+**Problem**: Example code in playground uses `[keyword: description]` instead of documented format `/* xxx, keyword: description */`
+
+**Location**: `packages/playground/src/App.tsx:9-47`
+
+```typescript
+// Current (WRONG):
+[immutable: This value cannot be changed]
+const message: string = "Hello, ScriptRust!";
+
+// Should be (CORRECT):
+/* xxx, immutable: This value cannot be changed */
+const message: string = "Hello, ScriptRust!";
+```
+
+**Impact**:
+- Users learn wrong syntax from playground
+- Documentation and playground inconsistent
+- May confuse new users about correct decoration format
+
+**Fix**: Update `EXAMPLE_CODE` constant to use correct decoration syntax
+
+---
+
+#### Issue 7: Security Vulnerabilities in Dependencies
+**Severity**: MEDIUM
+**Status**: ⚠️ 2 MODERATE VULNERABILITIES
+
+```
+esbuild  <=0.24.2
+Severity: moderate
+esbuild enables any website to send requests to dev server
+
+vite  0.11.0 - 6.1.6
+Depends on vulnerable versions of esbuild
+```
+
+**Fix**: Run `npm audit fix` (may require testing for breaking changes)
 
 ---
 
@@ -44,20 +275,17 @@ The ScriptRust implementation has achieved **significant progress** since the pr
 ScriptRust files are valid TypeScript when decorations are removed.
 
 **Evidence**:
-```typescript
-// Valid TypeScript
-const message: string = "Hello";
-function greet(name: string): string {
-  return "Hello, " + name;
-}
+```bash
+$ tsc --noEmit examples/hello.ts
+✓ No errors (TypeScript accepts the code)
 ```
 
-**Files**: `packages/compiler/src/parser.ts` (900+ lines), `packages/compiler/src/lexer.ts` (379 lines)
+**Files**: All examples are valid TypeScript
 
 ---
 
 ### ✅ Requirement 2: Decoration Format `/* xxx, keyword: description */`
-**Status**: **FULLY IMPLEMENTED** ✓
+**Status**: **FULLY IMPLEMENTED** ✓ (with playground issue)
 
 **Format**: All decorations begin with `xxx` keyword prefix using comment-style syntax.
 
@@ -75,28 +303,33 @@ function greet(/* xxx, immutable: name */ name: string): string {
 ```
 
 **Implementation**:
-- Lexer tokenizes decorations: `packages/compiler/src/lexer.ts:43-44`
+- Lexer tokenizes decorations: `packages/compiler/src/lexer.ts:44` (TokenType.DECORATION)
 - AST nodes include decoration metadata: `packages/compiler/src/ast.ts:16-19`
-- Parser attaches decorations to statements: `packages/compiler/src/parser.ts:34-38`
+- Parser attaches decorations: `packages/compiler/src/parser.ts:35-38`
 
-**⚠️ Minor Issue**: Playground example code uses old format `[keyword: desc]` instead of `/* xxx, keyword: desc */`
-**Location**: `packages/playground/src/App.tsx:9-47`
+**⚠️ Issue**: Playground example uses old format `[keyword: desc]` at `packages/playground/src/App.tsx:13-46`
 
 ---
 
 ### ✅ Requirement 3: Node.js Implementation
 **Status**: **FULLY IMPLEMENTED** ✓
 
-**Compiler Architecture**:
-1. **Lexer** (`lexer.ts`): Tokenizes source code including decorations
-2. **Parser** (`parser.ts`): Builds AST from tokens
-3. **AST** (`ast.ts`): Comprehensive node type definitions
-4. **JavaScript CodeGen** (`codegen.ts`): Transpiles AST to JavaScript
-5. **Rust CodeGen** (`rust-codegen.ts`): **NEW** - Transpiles AST to Rust
-6. **CLI** (`cli.ts`): Command-line interface
-7. **Compiler** (`compiler.ts`): Main orchestrator
+**Compiler Architecture** (3,507 total lines):
+1. **Lexer** (`lexer.ts`, 529 lines): Tokenizes source code including decorations
+2. **Parser** (`parser.ts`, 1,090 lines): Builds AST from tokens
+3. **AST** (`ast.ts`, 394 lines): Comprehensive node type definitions
+4. **JavaScript CodeGen** (`codegen.ts`, 534 lines): Transpiles AST to JavaScript
+5. **Rust CodeGen** (`rust-codegen.ts`, 807 lines): Transpiles AST to Rust
+6. **CLI** (`cli.ts`, 46 lines): Command-line interface
+7. **Compiler** (`compiler.ts`, 98 lines): Main orchestrator
+8. **Index** (`index.ts`, 9 lines): Public API
 
 **Build Status**: ✅ Compiles successfully with TypeScript
+
+```bash
+$ npm run build -w packages/compiler
+✓ Built successfully (no errors)
+```
 
 ---
 
@@ -114,166 +347,53 @@ function greet(/* xxx, immutable: name */ name: string): string {
 - ✅ Example code included
 - ✅ Responsive UI with icons (lucide-react)
 
-**Build**: ✅ **NOW WORKING** (was failing in previous review)
+**Build**: ✅ **WORKING**
 ```bash
 $ npm run build -w packages/playground
-✓ built in 6.30s
-dist/assets/index-DBERBWa5.js   212.94 kB │ gzip: 62.45 kB
+✓ built in 5.49s
+dist/assets/index-BmJcsz18.js   214.13 kB │ gzip: 62.71 kB
 ```
 
-**⚠️ Minor Issue**: Example code uses old decoration format
-
-**Files**: `packages/playground/src/App.tsx`
+**⚠️ Issue**: Example code uses old decoration format (see Issue 6)
 
 ---
 
-### ✅ Requirement 5: Rust Code Generation (CRITICAL)
-**Status**: **FULLY IMPLEMENTED** ✓ (Was missing in previous review)
+### ⚠️ Requirement 5: Rust Code Generation
+**Status**: **IMPLEMENTED BUT NOT PRODUCTION-READY** ⚠️
 
-**Implementation**: `packages/compiler/src/rust-codegen.ts` (720 lines)
+**Implementation**: `packages/compiler/src/rust-codegen.ts` (807 lines)
 
 **CLI Command**:
 ```bash
 $ npx scriptrust examples/hello.ts
-Converted to Rust: /home/user/ScriptRust/examples/hello.rs
+✓ Converted to Rust: /home/user/ScriptRust/examples/hello.rs
 ```
 
-**Test**:
+**Test Coverage**: ✅ **29/29 tests passing**
 ```bash
-$ npx scriptrust examples/hello.ts
-✓ Success - generates hello.rs
+$ npm test -w packages/compiler
+✓ 29 tests passed (all green)
 ```
 
-**Decoration-to-Rust Mapping**:
+**⚠️ CRITICAL ISSUE**: Generated Rust code **does not compile with rustc**
 
-| Decoration | TypeScript | Rust Output |
-|------------|------------|-------------|
-| `/* xxx, immutable */` | `const x = 5` | `let x = 5` (immutable by default) |
-| `/* xxx, mut */` | `let count = 0` | `let mut count = 0` |
-| `/* xxx, ownership: borrowed */` | method parameter | Uses `&self` or `&mut self` |
-| `/* xxx, pure */` | method | Uses `&self` (immutable borrow) |
-
-**Type Conversions**:
-
-| TypeScript Type | Rust Type |
-|----------------|-----------|
-| `string` | `&str` |
-| `number` | `f64` |
-| `boolean` | `bool` |
-| `void` | `()` |
-| `null` | `None` |
-| `Array<T>` / `T[]` | `Vec<T>` |
-| `Promise<T>` | `Future` (with `.await` support) |
-
-**Language Feature Conversions**:
-
-| TypeScript | Rust |
-|------------|------|
-| `console.log(x)` | `println!("{:?}", x)` |
-| `new ClassName()` | `ClassName::new()` |
-| `class MyClass` | `struct MyClass` + `impl MyClass` |
-| `interface MyInterface` | `pub trait MyInterface` |
-| `(x) => x * 2` | `\|x\| x * 2` |
-| `await fetchData()` | `fetchData().await` |
-| `throw "error"` | `panic!("error")` |
-| `this` | `self` |
-| `===` / `!==` | `==` / `!=` |
-
-**Example Conversion**:
-
-**Input** (`hello.ts`):
-```typescript
-/* xxx, immutable: greeting message */
-const message: string = "Hello, ScriptRust!";
-
-/* xxx, pure: simple greeting function */
-function greet(/* xxx, immutable: name */ name: string): string {
-  return "Hello, " + name + "!";
-}
-
-console.log(message);
-console.log(greet("World"));
+```bash
+$ rustc examples/hello.rs
+✗ error: expected item, found keyword `let`
+  `let` cannot be used for global variables
 ```
 
-**Output** (`hello.rs`):
-```rust
-let message: &str = "Hello, ScriptRust!";
-
-fn greet(name: &str) -> &str {
-    "Hello, " + name + "!"
-}
-
-println!("{:?}", message);
-
-println!("{:?}", greet("World"));
+```bash
+$ rustc examples/classes.rs
+✗ error: expected item, found keyword `let`
+  `let` cannot be used for global variables
 ```
 
-**Class Conversion Example**:
-
-**Input**:
-```typescript
-class Circle {
-  radius: number;
-
-  constructor(r: number) {
-    this.radius = r;
-  }
-
-  /* xxx, pure: area calculation */
-  area(): number {
-    return 3.14 * this.radius * this.radius;
-  }
-}
-```
-
-**Output**:
-```rust
-struct Circle {
-    pub radius: f64,
-}
-
-impl Circle {
-    pub fn new(r: f64) -> Self {
-        self.radius = r;
-    }
-
-    pub fn area(&self) -> f64 {
-        3.14 * self.radius * self.radius
-    }
-}
-```
-
-**Test Coverage**:
-- ✅ 20+ comprehensive test cases in `src/__tests__/rust-codegen.test.ts`
-- ✅ Variable declarations (mutable/immutable)
-- ✅ Function declarations with parameters
-- ✅ Class → struct + impl conversions
-- ✅ Type conversions
-- ✅ Console.log → println! macro
-- ✅ Ownership and borrowing semantics
-- ✅ Control flow (if/while/for)
-- ✅ Expressions (arrow functions, ternary, await)
-- ✅ Error handling (try/catch/throw)
-
-**⚠️ Known Issues with Generated Rust Code**:
-
-1. **String Concatenation** - Uses `+` operator which doesn't work in Rust
-   - Generated: `"Hello, " + name + "!"`
-   - Should be: `format!("Hello, {}!", name)`
-   - **Severity**: HIGH - Will not compile in Rust
-
-2. **Constructor Body** - Missing proper struct initialization
-   - Generated: `self.radius = r;` (in constructor body)
-   - Should be: `Self { radius: r }`
-   - **Severity**: HIGH - Will not compile in Rust
-
-3. **Missing Return Keywords** - Rust uses implicit returns but needs proper syntax
-   - Generated: `self.refCount = self.refCount + 1;` (mutation in immutable method)
-   - Should use `&mut self` for mutating methods
-   - **Severity**: MEDIUM - Borrow checker will fail
-
-4. **For Loops** - Converted to `loop` with comment instead of proper `for..in` range
-   - **Severity**: MEDIUM - Requires manual conversion
+**Verdict**: Rust generation is implemented and tested, but output is not valid Rust code. Requires fixes for:
+1. Module-level variable declarations
+2. Missing closing braces
+3. Type ownership issues
+4. Operator precedence
 
 ---
 
@@ -284,63 +404,85 @@ impl Circle {
 ```bash
 # Test 1: TypeScript Compatibility
 $ tsc --noEmit examples/hello.ts
-✓ No errors
+✓ No errors - valid TypeScript
 
-# Test 2: Rust Code Generation
-$ npx scriptrust examples/hello.ts
-✓ Generates hello.rs
-
-# Test 3: Compiler Build
+# Test 2: Compiler Build
 $ npm run build -w packages/compiler
-✓ Builds successfully
+✓ Builds successfully (no TypeScript errors)
 
-# Test 4: Playground Build
+# Test 3: Playground Build
 $ npm run build -w packages/playground
-✓ Built in 6.30s (FIXED - was failing before)
+✓ Built in 5.49s
+
+# Test 4: Rust Code Generation (tests)
+$ npm test -w packages/compiler
+✓ 29/29 tests passed
+  ✓ Variable declarations (immutable/mutable)
+  ✓ Function declarations
+  ✓ Class → struct + impl conversions
+  ✓ Type conversions
+  ✓ Console.log → println!
+  ✓ Ownership and borrowing
+  ✓ Control flow
+  ✓ Expressions
+  ✓ Error handling
+  ✓ Decoration handling
+
+# Test 5: CLI Execution
+$ npx scriptrust examples/hello.ts
+✓ Generates hello.rs file
 ```
 
 ### ❌ Failed Tests
 
 ```bash
-# Test 1: Jest Test Suite
-$ npm test -w packages/compiler
-✗ Cannot find module './lexer.js' from 'src/parser.ts'
-Issue: Jest configuration needs to handle ES modules
-Severity: MEDIUM - Tests exist but can't run
-
-# Test 2: Generated Rust Compilation
+# Test 1: Generated Rust Compilation (hello.rs)
 $ rustc examples/hello.rs
-✗ String concatenation error
-Severity: HIGH - Generated code won't compile in Rust
+✗ error: expected item, found keyword `let`
+   `let` cannot be used for global variables
+Severity: CRITICAL - Primary output format is broken
+
+# Test 2: Generated Rust Compilation (classes.rs)
+$ rustc examples/classes.rs
+✗ error: expected item, found keyword `let`
+   `let` cannot be used for global variables
+Severity: CRITICAL - Class examples won't compile
+
+# Test 3: Security Audit
+$ npm audit
+✗ 2 moderate severity vulnerabilities
+Severity: MEDIUM - Dependencies need updating
 ```
 
 ---
 
 ## Feature Completeness Matrix
 
-| Feature | Required | Implemented | Tested | Status |
-|---------|----------|-------------|--------|--------|
-| TypeScript syntax support | ✅ | ✅ | ✅ | Full support |
-| Decoration format `/* xxx, kw: desc */` | ✅ | ✅ | ✅ | Working perfectly |
-| Decoration keywords | ✅ | ✅ | ✅ | 6 keywords supported |
-| Node.js compiler | ✅ | ✅ | ✅ | Fully functional |
-| Lexer | ✅ | ✅ | ✅ | 379 lines |
-| Parser | ✅ | ✅ | ✅ | 900+ lines |
-| AST | ✅ | ✅ | ✅ | Comprehensive |
-| JavaScript CodeGen | ✅ | ✅ | ✅ | Working |
-| **Rust CodeGen** | **✅** | **✅** | **⚠️** | **IMPLEMENTED** (was missing) |
-| CLI - Rust compilation | ✅ | ✅ | ✅ | Works |
-| Playground UI | ✅ | ✅ | ✅ | Build fixed |
-| React framework | ✅ | ✅ | ✅ | React 18 |
-| shadcn/ui components | ✅ | ✅ | ✅ | Button, Card, Tabs |
-| Tailwind CSS | ✅ | ✅ | ✅ | Configured |
-| Monaco Editor | ✅ | ✅ | ✅ | Integrated |
-| Example files | ✅ | ✅ | ✅ | 4 examples with .rs output |
-| Jest tests | ✅ | ✅ | ❌ | Config issue |
-| Valid Rust output | ✅ | ⚠️ | ❌ | Syntax errors in output |
+| Feature | Required | Implemented | Tested | Rust Compiles | Status |
+|---------|----------|-------------|--------|---------------|--------|
+| TypeScript syntax support | ✅ | ✅ | ✅ | N/A | ✅ Full support |
+| Decoration format `/* xxx, kw: desc */` | ✅ | ✅ | ✅ | N/A | ✅ Working perfectly |
+| Decoration keywords | ✅ | ✅ | ✅ | N/A | ✅ 6 keywords supported |
+| Node.js compiler | ✅ | ✅ | ✅ | N/A | ✅ Fully functional |
+| Lexer | ✅ | ✅ | ✅ | N/A | ✅ 529 lines |
+| Parser | ✅ | ✅ | ✅ | N/A | ✅ 1,090 lines |
+| AST | ✅ | ✅ | ✅ | N/A | ✅ Comprehensive |
+| JavaScript CodeGen | ✅ | ✅ | ✅ | N/A | ✅ Working |
+| **Rust CodeGen** | **✅** | **✅** | **✅** | **❌** | **⚠️ NEEDS FIXES** |
+| CLI - Rust compilation | ✅ | ✅ | ✅ | ❌ | ⚠️ Generates invalid code |
+| Playground UI | ✅ | ✅ | ✅ | N/A | ✅ Builds successfully |
+| React framework | ✅ | ✅ | ✅ | N/A | ✅ React 18 |
+| shadcn/ui components | ✅ | ✅ | ✅ | N/A | ✅ Button, Card, Tabs |
+| Tailwind CSS | ✅ | ✅ | ✅ | N/A | ✅ Configured |
+| Monaco Editor | ✅ | ✅ | ✅ | N/A | ✅ Integrated |
+| Example files | ✅ | ✅ | ✅ | ❌ | ⚠️ Generate but won't compile |
+| Jest tests | ✅ | ✅ | ✅ | N/A | ✅ 29/29 passing |
+| **Valid Rust output** | **✅** | **⚠️** | **❌** | **❌** | **❌ CRITICAL ISSUE** |
 
-**Completion Rate**: 20/22 = **~92% Complete** (up from 82% in previous review)
-**Critical Features**: 100% implemented (up from 0% Rust generation)
+**Completion Rate**:
+- **Features Implemented**: 18/18 = **100%** ✅
+- **Features Working Correctly**: 16/18 = **89%** ⚠️
+- **Rust Compilation**: 0% (critical blocker)
 
 ---
 
@@ -348,83 +490,100 @@ Severity: HIGH - Generated code won't compile in Rust
 
 ### Strengths ✅
 
-1. **Well-architected compiler pipeline** - Clean separation of concerns
-2. **Comprehensive Rust code generator** - 720 lines covering most TypeScript features
-3. **Extensive test coverage** - 20+ test cases for Rust generation
-4. **Type-safe implementation** - Full TypeScript typing throughout
-5. **Good error handling** - Try/catch with detailed error messages
-6. **Excellent documentation** - Comprehensive README with examples
-7. **Modern tooling** - Vite, React 18, Monaco Editor, shadcn/ui
-8. **Production-ready build** - Playground builds and bundles correctly
+1. **Excellent test coverage** - 29 comprehensive tests, all passing
+2. **Clean architecture** - Well-separated concerns (lexer → parser → codegen)
+3. **Type-safe implementation** - Full TypeScript typing throughout
+4. **Good error handling** - Try/catch with error collection
+5. **Modern tooling** - Vite, React 18, Monaco Editor, shadcn/ui
+6. **Production-ready builds** - Both compiler and playground build successfully
+7. **Comprehensive parser** - 1,090 lines covering full TypeScript syntax
+8. **Proper Jest configuration** - ES modules working correctly
+9. **Constructor generation improved** - Now generates valid Rust struct initialization
+10. **String concatenation awareness** - Detects strings and uses `format!()`
 
 ### Weaknesses ⚠️
 
-1. **Generated Rust code has syntax errors**
-   - String concatenation uses `+` instead of `format!()` macro
-   - Constructor bodies don't use proper struct initialization syntax
-   - Some borrowing/mutability issues
+1. **Generated Rust code doesn't compile** ❌
+   - Module-level `let` statements (should be `const`/`static` or in `fn main()`)
+   - Missing closing braces in methods
+   - Type ownership errors
+   - Operator precedence issues
 
-2. **Jest test configuration broken**
-   - ES module resolution issues
-   - Tests exist but can't execute
+2. **Inefficient string concatenation** ⚠️
+   - Nested `format!()` calls instead of single efficient call
+   - Example: `format!("{}{}", format!("{}{}", a, b), c)` vs `format!("{}{}{}", a, b, c)`
 
-3. **Decoration format inconsistency**
-   - Playground example uses old `[keyword: desc]` format
-   - Should use `/* xxx, keyword: desc */` format
+3. **No scope tracking** ❌
+   - Generator doesn't know if it's in module scope vs function scope
+   - All variables generated as `let` regardless of context
 
-4. **No validation of decoration keywords**
-   - Parser accepts any keyword without validation
-   - Should check against allowed list
+4. **Playground example outdated** ⚠️
+   - Uses old decoration format inconsistent with docs
 
-5. **Limited error messages**
-   - Could provide better context for decoration errors
+5. **No validation of decoration keywords** ⚠️
+   - Parser accepts any keyword without checking against allowed list
+
+6. **Type mapping could be smarter** ⚠️
+   - Always generates `String` even for string literals (could use `&str`)
+   - No lifetime parameter support
+
+7. **No Rust output validation** ❌
+   - CLI generates code but doesn't verify it's valid Rust
+   - No integration with `rustc` or `cargo check`
 
 ---
 
 ## Detailed Code Review by Component
 
 ### 1. Lexer (`packages/compiler/src/lexer.ts`)
-**Lines**: 379
+**Lines**: 529
 **Quality**: ✅ Excellent
 
 **Strengths**:
-- Comprehensive token types (90 token types defined)
-- Properly handles decorations: `TokenType.DECORATION` at line 44
+- Comprehensive token types (90+ token types)
+- Properly handles decorations: TokenType.DECORATION (line 44)
 - Good handling of all TypeScript operators and keywords
-- Clean code structure
+- Clean code structure with clear tokenization logic
 
-**Issues**: None
+**Issues**: None significant
 
 ---
 
 ### 2. Parser (`packages/compiler/src/parser.ts`)
-**Lines**: 900+
+**Lines**: 1,090
 **Quality**: ✅ Very Good
 
 **Strengths**:
 - Builds complete AST from tokens
-- Properly attaches decorations to AST nodes (lines 34-38)
+- Properly attaches decorations to AST nodes (lines 35-38)
 - Handles all TypeScript language features
 - Good error messages
 
 **Issues**:
-- No validation of decoration keywords
+- No validation of decoration keywords (accepts invalid keywords)
 - Could benefit from better error recovery
 
-**Decoration Handling**:
+**Decoration Handling** (lines 35-38):
 ```typescript
-// Line 34-38: Collects pending decorations
 while (this.match(TokenType.DECORATION)) {
   const decoration = JSON.parse(this.previous().value) as Decoration;
   this.pendingDecorations.push(decoration);
 }
 ```
 
+**Recommendation**: Add keyword validation:
+```typescript
+const VALID_KEYWORDS = ['immutable', 'mut', 'ownership', 'pure', 'unsafe', 'lifetime'];
+if (!VALID_KEYWORDS.includes(decoration.keyword)) {
+  throw new Error(`Invalid decoration keyword: '${decoration.keyword}'`);
+}
+```
+
 ---
 
-### 3. Rust Code Generator (`packages/compiler/src/rust-codegen.ts`) **NEW**
-**Lines**: 720
-**Quality**: ✅ Very Good (with fixable issues)
+### 3. Rust Code Generator (`packages/compiler/src/rust-codegen.ts`) **CRITICAL**
+**Lines**: 807
+**Quality**: ⚠️ Good Implementation, Invalid Output
 
 **Strengths**:
 - Comprehensive coverage of TypeScript features
@@ -433,52 +592,109 @@ while (this.match(TokenType.DECORATION)) {
 - Handles classes → struct + impl conversion
 - Async/await support with `.await` syntax
 - Smart `&self` vs `&mut self` detection based on `pure` decoration
+- **Constructor bodies now generate proper `Self { field: value }` syntax** ✅
+- **String concatenation now uses `format!()` macro** ✅
 
-**Issues**:
+**Critical Issues**:
 
-1. **String Concatenation** (Line ~491-499)
-   ```typescript
-   // Current implementation
-   this.generateExpression(node.left);
-   this.output += ' ' + operator + ' ';
-   this.generateExpression(node.right);
-   ```
-   - Problem: Generates `"Hello, " + name` which doesn't compile in Rust
-   - Fix needed: Detect string concatenation and use `format!()` macro
-
-2. **Constructor Bodies** (Line ~224-232)
-   ```typescript
-   // Generates: pub fn new(...) -> Self { self.x = x; }
-   // Should be: pub fn new(...) -> Self { Self { x, y } }
-   ```
-   - Problem: Generates assignment statements in constructor
-   - Fix needed: Generate struct initialization syntax
-
-3. **Method Mutability** (Line ~234-242)
-   - Sometimes generates `&self` for methods that mutate state
-   - Fix needed: Better analysis of method body for mutations
-
-**Highlights**:
-
-- **Line 92-101**: Smart mut/immutable detection
-  ```typescript
-  const isMutable = this.hasDecoration(decl.id, 'mut');
-  const isImmutable = this.hasDecoration(decl.id, 'immutable');
-  this.output += 'let ';
-  if (isMutable && !isImmutable) {
-    this.output += 'mut ';
+#### Issue A: Module-Level Variables (Lines 87-119)
+```typescript
+private generateVariableDeclaration(node: AST.VariableDeclaration): void {
+  for (const decl of node.declarations) {
+    this.writeIndent();
+    this.output += 'let ';  // ❌ WRONG for module-level declarations
+    // ...
   }
-  ```
+}
+```
 
-- **Line 515-540**: Console.log → println! conversion
-  ```typescript
-  if (node.callee.property.name === 'log') {
-    this.output += 'println!(';
-    // Generates: println!("{:?}", value)
+**Problem**: Always generates `let`, but Rust doesn't allow `let` at module level.
+
+**Fix Needed**:
+```typescript
+private generateVariableDeclaration(node: AST.VariableDeclaration): void {
+  for (const decl of node.declarations) {
+    this.writeIndent();
+
+    // Check if we're at module level
+    if (this.isModuleLevel()) {
+      // For constants
+      if (node.kind === 'const') {
+        this.output += 'const ';
+      } else {
+        // For variables, need to wrap in main() or use static
+        this.output += 'static ';
+      }
+    } else {
+      // Inside function/method
+      this.output += 'let ';
+      if (isMutable && !isImmutable) {
+        this.output += 'mut ';
+      }
+    }
+    // ...
   }
-  ```
+}
+```
 
-- **Line 639-710**: Comprehensive type mapping
+#### Issue B: Nested format!() for String Concatenation (Lines 551-571)
+```typescript
+private generateBinaryExpression(node: AST.BinaryExpression): void {
+  if (node.operator === '+' && this.isStringExpression(node.left)) {
+    // ❌ Creates nested format!() calls
+    this.output += 'format!("{}{}", ';
+    this.generateExpression(node.left);  // May itself be format!()
+    this.output += ', ';
+    this.generateExpression(node.right); // May itself be format!()
+    this.output += ')';
+  }
+  // ...
+}
+```
+
+**Current Output**: `format!("{}{}", format!("{}{}", "Hello, ", name), "!")`
+**Desired Output**: `format!("Hello, {}!", name)`
+
+**Fix Needed**: Collect all parts of string concatenation chain, then build single format string:
+```typescript
+private generateBinaryExpression(node: AST.BinaryExpression): void {
+  if (node.operator === '+' && this.isStringExpression(node.left)) {
+    // Collect all parts of the concatenation
+    const parts = this.collectStringConcatParts(node);
+
+    // Build format string and args
+    let formatStr = '';
+    const args: AST.Expression[] = [];
+
+    for (const part of parts) {
+      if (part.type === 'StringLiteral') {
+        formatStr += part.value;
+      } else {
+        formatStr += '{}';
+        args.push(part);
+      }
+    }
+
+    this.output += `format!("${formatStr}"`;
+    for (const arg of args) {
+      this.output += ', ';
+      this.generateExpression(arg);
+    }
+    this.output += ')';
+  }
+  // ...
+}
+```
+
+#### Issue C: Missing Method Closing Braces (Line 273)
+```typescript
+private generateMethodDefinition(node: AST.MethodDefinition): void {
+  // ... method generation ...
+  this.output += '\n';  // ❌ Missing closing brace
+}
+```
+
+**Fix**: The `generateBlockStatement` already adds the closing brace, but we need proper formatting.
 
 ---
 
@@ -489,31 +705,19 @@ while (this.match(TokenType.DECORATION)) {
 **Strengths**:
 - Clean main interface
 - Two compilation modes: JavaScript (`compile()`) and Rust (`compileToRust()`)
-- Good error handling
+- Good error handling with error collection
 - `compileAndRun()` for JavaScript execution
 
-**Code Highlight**:
-```typescript
-// Line 66-94: Rust compilation pipeline
-compileToRust(source: string): CompilationResult {
-  const lexer = new Lexer(source);
-  const tokens = lexer.tokenize();
-  const parser = new Parser(tokens);
-  ast = parser.parse();
-  const codegen = new RustCodeGenerator(); // NEW
-  code = codegen.generate(ast);
-}
-```
+**Code Quality**: Well-structured, easy to understand
 
 ---
 
 ### 5. CLI (`packages/compiler/src/cli.ts`)
-**Lines**: 47
+**Lines**: 46
 **Quality**: ✅ Excellent
 
 **Strengths**:
-- Simple, focused CLI
-- Uses Commander.js for argument parsing
+- Simple, focused CLI using Commander.js
 - Automatic output file naming (`input.ts` → `input.rs`)
 - Custom output file support with `-o` flag
 - Good error messages
@@ -523,8 +727,6 @@ compileToRust(source: string): CompilationResult {
 npx scriptrust hello.ts           # → hello.rs
 npx scriptrust hello.ts -o out.rs # → out.rs
 ```
-
-**Code Quality**: Clean, well-documented
 
 ---
 
@@ -541,169 +743,10 @@ npx scriptrust hello.ts -o out.rs # → out.rs
 - Responsive UI with Tailwind CSS
 
 **Issues**:
-- Example code uses old decoration format `[keyword: desc]` (lines 9-47)
+- Example code uses old decoration format `[keyword: desc]` (lines 13-46)
 - No Rust output tab (only shows JavaScript compilation)
 
-**Suggested Enhancement**: Add Rust output tab
-```typescript
-<TabsTrigger value="rust">Rust</TabsTrigger>
-// Show result from compiler.compileToRust()
-```
-
----
-
-### 7. Test Suite (`packages/compiler/src/__tests__/rust-codegen.test.ts`)
-**Lines**: 357
-**Quality**: ✅ Excellent (but can't run)
-
-**Test Coverage**:
-- ✅ Variable declarations (immutable/mutable)
-- ✅ Function declarations
-- ✅ Class declarations → struct + impl
-- ✅ Type conversions
-- ✅ Console.log conversion
-- ✅ Ownership and borrowing
-- ✅ Control flow
-- ✅ Expressions
-- ✅ Error handling
-- ✅ Decoration preservation
-
-**Issue**: Jest can't find modules due to ES module configuration
-```
-Cannot find module './lexer.js' from 'src/parser.ts'
-```
-
-**Fix Required**: Add `jest.config.cjs` or update to use `ts-jest` with ES modules
-
----
-
-## Bugs & Issues
-
-### 🔴 HIGH Priority
-
-#### 1. Generated Rust Code Has Syntax Errors
-- **Severity**: HIGH
-- **Impact**: Generated `.rs` files won't compile with `rustc`
-- **Location**: `packages/compiler/src/rust-codegen.ts`
-
-**Issues**:
-1. String concatenation uses `+` instead of `format!()` macro
-2. Constructor bodies use assignment instead of struct initialization
-3. Some methods marked `&self` should be `&mut self`
-
-**Example**:
-```rust
-// Generated (WRONG):
-fn greet(name: &str) -> &str {
-    "Hello, " + name + "!"  // ERROR: can't use + on &str
-}
-
-pub fn new(r: f64) -> Self {
-    self.radius = r;  // ERROR: invalid in constructor
-}
-
-// Should be:
-fn greet(name: &str) -> String {
-    format!("Hello, {}!", name)
-}
-
-pub fn new(r: f64) -> Self {
-    Self { radius: r }
-}
-```
-
-**Recommendation**: Fix `RustCodeGenerator` class:
-- Detect string concatenation (BinaryExpression with + on strings)
-- Use `format!()` macro for string operations
-- Generate proper struct initialization in constructors
-- Analyze method bodies for mutations to determine `&self` vs `&mut self`
-
----
-
-#### 2. Jest Test Configuration Broken
-- **Severity**: HIGH
-- **Impact**: Can't run 357 lines of test code
-- **Location**: `packages/compiler/jest.config.cjs`
-
-**Error**:
-```
-Cannot find module './lexer.js' from 'src/parser.ts'
-```
-
-**Root Cause**: ES module imports (`.js` extensions) not resolving in Jest
-
-**Fix**: Update `jest.config.cjs`:
-```javascript
-module.exports = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
-  extensionsToTreatAsEsm: ['.ts'],
-  moduleNameMapper: {
-    '^(\\.{1,2}/.*)\\.js$': '$1',
-  },
-  transform: {
-    '^.+\\.tsx?$': ['ts-jest', {
-      useESM: true,
-    }],
-  },
-};
-```
-
----
-
-### 🟡 MEDIUM Priority
-
-#### 3. Decoration Format Inconsistency in Playground
-- **Severity**: MEDIUM
-- **Impact**: Example code shows wrong decoration syntax
-- **Location**: `packages/playground/src/App.tsx:9-47`
-
-**Issue**: Example uses old format `[keyword: desc]` instead of `/* xxx, keyword: desc */`
-
-**Fix**: Update example code:
-```typescript
-const EXAMPLE_CODE = `// Welcome to ScriptRust!
-
-/* xxx, immutable: This value cannot be changed */
-const message: string = "Hello, ScriptRust!";
-
-/* xxx, ownership: borrowed */
-function greet(/* xxx, immutable: parameter */ name: string): string {
-  return "Hello, " + name + "!";
-}
-`;
-```
-
----
-
-#### 4. No Decoration Keyword Validation
-- **Severity**: MEDIUM
-- **Impact**: Users can use invalid keywords without warnings
-- **Location**: `packages/compiler/src/parser.ts`
-
-**Fix**: Add validation:
-```typescript
-const VALID_KEYWORDS = ['immutable', 'mut', 'ownership', 'pure', 'unsafe', 'lifetime'];
-
-while (this.match(TokenType.DECORATION)) {
-  const decoration = JSON.parse(this.previous().value) as Decoration;
-  if (!VALID_KEYWORDS.includes(decoration.keyword)) {
-    throw new Error(`Invalid decoration keyword: '${decoration.keyword}'`);
-  }
-  this.pendingDecorations.push(decoration);
-}
-```
-
----
-
-### 🟢 LOW Priority
-
-#### 5. No Rust Output Tab in Playground
-- **Severity**: LOW
-- **Impact**: Users can't see Rust compilation in playground
-- **Enhancement**: Add Rust output tab alongside JavaScript/AST
-
-**Implementation**:
+**Suggested Enhancement**: Add Rust output tab:
 ```typescript
 const [rustCode, setRustCode] = useState<string>('');
 
@@ -714,169 +757,386 @@ setRustCode(rustResult.code);
 // In render:
 <TabsTrigger value="rust">Rust</TabsTrigger>
 <TabsContent value="rust">
-  <pre>{rustCode}</pre>
+  <pre className="bg-slate-900 text-slate-100 p-4 rounded overflow-auto">
+    {rustCode}
+  </pre>
 </TabsContent>
 ```
 
 ---
 
-#### 6. Security Vulnerabilities in Dependencies
-- **Severity**: LOW
-- **Impact**: 2 moderate severity vulnerabilities detected
+### 7. Test Suite (`packages/compiler/src/__tests__/rust-codegen.test.ts`)
+**Lines**: 357
+**Quality**: ✅ Excellent
 
-**Fix**:
-```bash
-npm audit fix
+**Test Coverage**: ✅ **29/29 tests passing**
+
+Categories:
+- ✅ Variable declarations (immutable/mutable)
+- ✅ Function declarations (including async)
+- ✅ Class declarations → struct + impl
+- ✅ Type conversions (string, number, boolean, array)
+- ✅ Console.log → println! conversion
+- ✅ Ownership and borrowing semantics
+- ✅ Control flow (if, while)
+- ✅ Expressions (new, await, arrow functions, ternary)
+- ✅ Error handling (throw → panic!)
+- ✅ Decoration preservation
+
+**Note**: Tests verify AST-to-Rust transformation logic but don't validate that generated Rust code actually compiles with `rustc`. This is why tests pass but generated code fails compilation.
+
+**Recommendation**: Add integration tests that run `rustc` on generated code:
+```typescript
+test('should generate valid compilable Rust code', () => {
+  const source = `const x: number = 5;`;
+  const result = generator.generate(parseSource(source));
+
+  // Write to temp file and try to compile
+  const tempFile = '/tmp/test.rs';
+  fs.writeFileSync(tempFile, `fn main() {\n${result}\n}`);
+
+  const rustcResult = execSync(`rustc --crate-type lib ${tempFile}`);
+  expect(rustcResult).not.toContain('error');
+});
 ```
+
+---
+
+## Bugs & Issues Summary
+
+### 🔴 CRITICAL Priority (Must Fix for MVP)
+
+| # | Issue | Severity | Impact | Location |
+|---|-------|----------|--------|----------|
+| 1 | Module-level `let` statements | CRITICAL | 100% of generated files fail `rustc` | `rust-codegen.ts:87-119` |
+| 2 | Missing closing braces in methods | HIGH | Syntax errors in class examples | `rust-codegen.ts:221-274` |
+| 3 | Type ownership errors | HIGH | Borrow checker failures | `rust-codegen.ts:710-781` |
+| 4 | Operator precedence not preserved | MEDIUM | Logic errors in math calculations | `rust-codegen.ts:551-571` |
+
+### 🟡 HIGH Priority (Fix Soon)
+
+| # | Issue | Severity | Impact | Location |
+|---|-------|----------|--------|----------|
+| 5 | Nested format!() calls | MEDIUM | Inefficient, hard to read | `rust-codegen.ts:551-571` |
+| 6 | Playground example format | MEDIUM | User confusion | `App.tsx:13-46` |
+| 7 | No decoration keyword validation | MEDIUM | Silent acceptance of invalid keywords | `parser.ts:35-38` |
+
+### 🟢 MEDIUM Priority (Nice to Have)
+
+| # | Issue | Severity | Impact | Location |
+|---|-------|----------|--------|----------|
+| 8 | Security vulnerabilities | MEDIUM | 2 moderate vulnerabilities | Dependencies |
+| 9 | No Rust output in playground | LOW | Missing feature | `App.tsx` |
+| 10 | No rustc validation | LOW | No feedback on validity | `cli.ts` |
 
 ---
 
 ## Recommendations
 
-### 🔴 CRITICAL - Priority 1 (Must Fix Before Production)
+### 🔴 CRITICAL - Priority 1 (Must Fix Before Release)
 
-#### 1. Fix Generated Rust Code Syntax Errors
+#### 1. Fix Module-Level Variable Declarations
 
 **File**: `packages/compiler/src/rust-codegen.ts`
 
 **Changes Needed**:
 
-1. **String Concatenation** (around line 490-500)
-   ```typescript
-   private generateBinaryExpression(node: AST.BinaryExpression): void {
-     // Detect string concatenation
-     if (node.operator === '+' && this.isStringExpression(node.left)) {
-       // Generate format!() macro instead
-       this.output += 'format!(';
-       // Build format string and args
-     } else {
-       // Normal binary expression
-       this.generateExpression(node.left);
-       this.output += ' ' + operator + ' ';
-       this.generateExpression(node.right);
-     }
-   }
-   ```
+Add scope tracking:
+```typescript
+export class RustCodeGenerator {
+  private output: string = '';
+  private indentLevel: number = 0;
+  private scopeLevel: number = 0;  // NEW: Track scope depth
 
-2. **Constructor Bodies** (around line 224-232)
-   ```typescript
-   private generateMethodDefinition(node: AST.MethodDefinition): void {
-     if (node.kind === 'constructor') {
-       this.output += 'pub fn new(';
-       // ... parameters ...
-       this.output += ') -> Self {\n';
-       this.indentLevel++;
-       this.writeIndent();
+  generate(program: AST.Program): string {
+    this.output = '';
+    this.indentLevel = 0;
+    this.scopeLevel = 0;
 
-       // Generate struct initialization
-       this.output += 'Self {\n';
-       this.indentLevel++;
-       // Extract field assignments from constructor body
-       // ... generate field: value pairs ...
-       this.indentLevel--;
-       this.output += '}\n';
-     }
-   }
-   ```
+    // Option 1: Wrap everything in main()
+    this.output += 'fn main() {\n';
+    this.indentLevel++;
 
-3. **Return Type for String Operations**
-   - Change return type from `&str` to `String` for string-building functions
-   - Update type mapping logic
+    for (const statement of program.body) {
+      this.generateStatement(statement);
+    }
+
+    this.indentLevel--;
+    this.output += '}\n';
+
+    return this.output;
+  }
+}
+```
+
+**OR** (better for library code):
+
+```typescript
+private generateVariableDeclaration(node: AST.VariableDeclaration): void {
+  for (const decl of node.declarations) {
+    this.writeIndent();
+
+    if (this.scopeLevel === 0) {
+      // Module-level declaration
+      if (node.kind === 'const') {
+        this.output += 'const ';
+        this.output += decl.id.name.toUpperCase();  // Constants are UPPERCASE
+      } else {
+        this.output += 'static mut ';  // Or use lazy_static for mutable statics
+      }
+    } else {
+      // Function-level declaration
+      this.output += 'let ';
+      if (isMutable && !isImmutable) {
+        this.output += 'mut ';
+      }
+    }
+    // ... rest of declaration
+  }
+}
+```
 
 ---
 
-#### 2. Fix Jest Test Configuration
+#### 2. Fix String Concatenation to Use Single format!() Call
 
-**File**: `packages/compiler/jest.config.cjs`
+**File**: `packages/compiler/src/rust-codegen.ts:551-571`
 
-Create or update:
-```javascript
-module.exports = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
-  extensionsToTreatAsEsm: ['.ts'],
-  moduleNameMapper: {
-    '^(\\.{1,2}/.*)\\.js$': '$1',
-  },
-  transform: {
-    '^.+\\.tsx?$': ['ts-jest', {
-      useESM: true,
-    }],
-  },
-};
+Add helper method:
+```typescript
+private collectStringConcatParts(node: AST.Expression): AST.Expression[] {
+  if (node.type !== 'BinaryExpression' || node.operator !== '+') {
+    return [node];
+  }
+
+  const parts: AST.Expression[] = [];
+  const left = this.collectStringConcatParts(node.left);
+  const right = this.collectStringConcatParts(node.right);
+
+  return [...left, ...right];
+}
+
+private generateBinaryExpression(node: AST.BinaryExpression): void {
+  if (node.operator === '+' && this.isStringExpression(node.left)) {
+    const parts = this.collectStringConcatParts(node);
+
+    let formatStr = '';
+    const args: AST.Expression[] = [];
+
+    for (const part of parts) {
+      if (part.type === 'StringLiteral') {
+        formatStr += part.value.replace(/"/g, '');  // Remove quotes
+      } else {
+        formatStr += '{}';
+        args.push(part);
+      }
+    }
+
+    this.output += `format!("${formatStr}"`;
+    for (const arg of args) {
+      this.output += ', ';
+      this.generateExpression(arg);
+    }
+    this.output += ')';
+  } else {
+    // ... regular binary expression
+  }
+}
+```
+
+---
+
+#### 3. Add rustc Validation to CLI
+
+**File**: `packages/compiler/src/cli.ts`
+
+Add validation step:
+```typescript
+import { execSync } from 'child_process';
+
+// After writing Rust file:
+try {
+  execSync(`rustc --crate-type lib ${outputPath} -o /tmp/check.out`,
+    { stdio: 'pipe' });
+  console.log('✓ Generated Rust code is valid');
+} catch (error: any) {
+  console.warn('⚠ Warning: Generated Rust code may have errors:');
+  console.warn(error.stderr?.toString());
+}
 ```
 
 ---
 
 ### 🟡 HIGH - Priority 2
 
-#### 3. Fix Playground Example Code
+#### 4. Fix Playground Example Code
 
-**File**: `packages/playground/src/App.tsx`
+**File**: `packages/playground/src/App.tsx:9-47`
 
-Update decoration syntax from `[keyword: desc]` to `/* xxx, keyword: desc */`
+Update decoration syntax:
+```typescript
+const EXAMPLE_CODE = `// Welcome to ScriptRust!
+// A hybrid language combining TypeScript and Rust features
+
+// Rust-style decorations for variable immutability
+/* xxx, immutable: This value cannot be changed */
+const message: string = "Hello, ScriptRust!";
+
+// Function with ownership decoration
+/* xxx, ownership: borrowed */
+function greet(/* xxx, immutable: parameter */ name: string): string {
+  return "Hello, " + name + "!";
+}
+
+// Class with lifetime decorations
+class Counter {
+  /* xxx, mut: mutable field */
+  count: number = 0;
+
+  /* xxx, pure: no side effects */
+  getValue(): number {
+    return this.count;
+  }
+}
+`;
+```
 
 ---
 
-#### 4. Add Decoration Keyword Validation
+#### 5. Add Decoration Keyword Validation
 
-**File**: `packages/compiler/src/parser.ts`
+**File**: `packages/compiler/src/parser.ts:35-38`
 
-Add validation in `statement()` method
+```typescript
+private statement(): AST.Statement | null {
+  const VALID_KEYWORDS = ['immutable', 'mut', 'ownership', 'pure', 'unsafe', 'lifetime'];
+
+  while (this.match(TokenType.DECORATION)) {
+    const decoration = JSON.parse(this.previous().value) as Decoration;
+
+    if (!VALID_KEYWORDS.includes(decoration.keyword)) {
+      throw new Error(
+        `Invalid decoration keyword '${decoration.keyword}'. ` +
+        `Valid keywords are: ${VALID_KEYWORDS.join(', ')}`
+      );
+    }
+
+    this.pendingDecorations.push(decoration);
+  }
+  // ...
+}
+```
 
 ---
 
-#### 5. Add Rust Output to Playground
+#### 6. Add Rust Output Tab to Playground
 
 **File**: `packages/playground/src/App.tsx`
 
-Add new tab showing Rust compilation output
+```typescript
+const [rustCode, setRustCode] = useState<string>('');
+
+const runCode = useCallback(() => {
+  // ... existing code ...
+
+  // Add Rust compilation
+  const rustResult = compiler.compileToRust(code);
+  setRustCode(rustResult.code);
+}, [code]);
+
+// In render:
+<Tabs value={activeTab} onValueChange={setActiveTab}>
+  <TabsList>
+    <TabsTrigger value="output">Output</TabsTrigger>
+    <TabsTrigger value="javascript">JavaScript</TabsTrigger>
+    <TabsTrigger value="rust">Rust</TabsTrigger>  {/* NEW */}
+    <TabsTrigger value="ast">AST</TabsTrigger>
+    <TabsTrigger value="errors">Errors</TabsTrigger>
+  </TabsList>
+
+  <TabsContent value="rust">  {/* NEW */}
+    <Card>
+      <CardHeader>
+        <CardTitle>Generated Rust Code</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <pre className="bg-slate-900 text-slate-100 p-4 rounded overflow-auto max-h-96">
+          {rustCode}
+        </pre>
+      </CardContent>
+    </Card>
+  </TabsContent>
+</Tabs>
+```
 
 ---
 
 ### 🟢 MEDIUM - Priority 3
 
-#### 6. Enhanced Error Messages
+#### 7. Fix Security Vulnerabilities
 
-Add better context for:
-- Invalid decoration syntax
-- Type mismatches
-- Rust-specific errors
-
----
-
-#### 7. Documentation Updates
-
-**File**: `README.md`
-
-Add:
-- Known limitations of Rust code generation
-- Examples of generated Rust code
-- Comparison table: TypeScript → Rust
-- Troubleshooting section
+```bash
+npm audit fix
+# Review changes and test
+npm test
+npm run build
+```
 
 ---
 
-#### 8. Security Updates
+#### 8. Add Integration Tests with rustc
 
-Run `npm audit fix` to address dependency vulnerabilities
+**File**: `packages/compiler/src/__tests__/rust-integration.test.ts` (new file)
 
----
+```typescript
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { writeFileSync, unlinkSync } from 'fs';
+import { RustCodeGenerator } from '../rust-codegen';
+import { Parser } from '../parser';
+import { Lexer } from '../lexer';
 
-## Comparison: Previous Review → Current Status
+const execAsync = promisify(exec);
 
-| Aspect | Previous Review | Current Status | Change |
-|--------|----------------|----------------|--------|
-| **Rust Code Generation** | ❌ Not implemented | ✅ Fully implemented | **MAJOR WIN** |
-| **Rust CodeGen Class** | ❌ Missing | ✅ 720 lines | **+720 lines** |
-| **CLI Rust Command** | ❌ Missing | ✅ Working | **ADDED** |
-| **Rust Tests** | ❌ None | ⚠️ 357 lines (can't run) | **+357 lines** |
-| **Playground Build** | ❌ Failing | ✅ Working | **FIXED** |
-| **Type Mapping** | ❌ None | ✅ Comprehensive | **ADDED** |
-| **Decoration Handling** | ✅ Working | ✅ Working | Maintained |
-| **TypeScript Support** | ✅ Full | ✅ Full | Maintained |
-| **Completion Rate** | 82% | **92%** | **+10%** |
-| **Critical Features** | 9% gap | **0% gap** | **COMPLETE** |
+describe('Rust Code Compilation Integration', () => {
+  async function compileRust(source: string): Promise<string> {
+    const lexer = new Lexer(source);
+    const tokens = lexer.tokenize();
+    const parser = new Parser(tokens);
+    const ast = parser.parse();
+    const generator = new RustCodeGenerator();
+    const rustCode = generator.generate(ast);
+
+    const tempFile = `/tmp/test_${Date.now()}.rs`;
+    writeFileSync(tempFile, `fn main() {\n${rustCode}\n}`);
+
+    try {
+      await execAsync(`rustc ${tempFile} -o /tmp/test.out`);
+      return 'success';
+    } catch (error: any) {
+      return error.stderr;
+    } finally {
+      unlinkSync(tempFile);
+    }
+  }
+
+  test('should generate compilable simple variable', async () => {
+    const source = 'const x: number = 5;';
+    const result = await compileRust(source);
+    expect(result).toBe('success');
+  });
+
+  test('should generate compilable function', async () => {
+    const source = `
+      function add(a: number, b: number): number {
+        return a + b;
+      }
+    `;
+    const result = await compileRust(source);
+    expect(result).toBe('success');
+  });
+});
+```
 
 ---
 
@@ -884,65 +1144,66 @@ Run `npm audit fix` to address dependency vulnerabilities
 
 ### Summary
 
-ScriptRust has **dramatically improved** since the previous review. The critical missing feature - **Rust code generation** - is now **fully implemented** with a comprehensive 720-line code generator. The playground build issues have been resolved, and the project is now **substantially complete** at ~92% completion.
+ScriptRust has made **excellent progress** on implementation and testing infrastructure. All 29 tests pass, builds work correctly, and the architecture is solid. However, the **primary deliverable - valid Rust code generation - is not yet achieved**. Generated code fails `rustc` compilation due to systematic issues.
 
 ### What Works ✅
 
-1. ✅ **TypeScript Compatibility**: Flawless - code is valid TypeScript
-2. ✅ **Decoration Syntax**: Clean `/* xxx, keyword: description */` format
-3. ✅ **Rust Code Generation**: **FULLY IMPLEMENTED** with comprehensive type/syntax mapping
-4. ✅ **CLI Tool**: Simple, functional, well-designed
-5. ✅ **Playground**: Builds successfully, modern React UI
-6. ✅ **Test Suite**: 357 lines of comprehensive tests (need config fix to run)
-7. ✅ **Code Quality**: Clean, maintainable, well-structured
-8. ✅ **Examples**: 4 comprehensive examples with .rs output
-9. ✅ **Documentation**: Excellent README with usage examples
+1. ✅ **Test Infrastructure**: 29/29 tests passing, Jest properly configured
+2. ✅ **TypeScript Compatibility**: Flawless - code is valid TypeScript
+3. ✅ **Decoration Syntax**: Clean `/* xxx, keyword: description */` format working
+4. ✅ **Builds**: Both compiler and playground build successfully
+5. ✅ **CLI Tool**: Simple, functional, well-designed
+6. ✅ **Playground**: Modern React UI, builds and runs
+7. ✅ **Code Quality**: Clean, maintainable, well-structured (3,507 lines)
+8. ✅ **Constructor Generation**: Fixed to use `Self { field: value }`
+9. ✅ **String Concatenation**: Now uses `format!()` macro (needs refinement)
 
-### Issues to Address ⚠️
+### Critical Blockers ❌
 
-1. ⚠️ **Generated Rust code has syntax errors** (HIGH priority)
-   - String concatenation
-   - Constructor bodies
-   - Some borrowing issues
+1. ❌ **Generated Rust doesn't compile** (100% failure rate with rustc)
+   - Module-level `let` statements
+   - Missing closing braces
+   - Type ownership errors
+   - Operator precedence issues
 
-2. ⚠️ **Jest tests can't run** (HIGH priority)
-   - ES module configuration issue
-
-3. ⚠️ **Playground example uses old decoration format** (MEDIUM priority)
-
-4. ⚠️ **No keyword validation** (MEDIUM priority)
+2. ❌ **No validation** of generated Rust code
+   - CLI generates code without checking validity
+   - Tests don't run `rustc`
 
 ### Verdict
 
-**Status**: ✅ **SUBSTANTIALLY COMPLETE**
+**Status**: ⚠️ **IMPLEMENTATION COMPLETE, OUTPUT INVALID**
 
-**Completion**: ~92% of features implemented (up from 82%)
+**Test Pass Rate**: 29/29 = **100%** ✅
+**Rust Compilation Rate**: 0/4 examples = **0%** ❌
 
-**Production Readiness**: Ready for beta release after fixing Rust code generation syntax errors
+**Production Readiness**: **NOT READY** - Generated code won't compile
 
-**Critical Achievement**: ✅ **Rust code generation is fully implemented** - the core value proposition of ScriptRust is now realized
+**Critical Achievement**: Infrastructure and testing framework are excellent, but core output needs fixes
 
 ### Next Steps
 
-**Immediate (Must Do)**:
-1. Fix string concatenation in Rust code generator
-2. Fix constructor body generation
-3. Fix Jest configuration to run tests
+**Immediate (Must Do Before Release)**:
+1. Fix module-level variable declarations (wrap in `fn main()` or use `const`/`static`)
+2. Fix string concatenation to use single `format!()` call
+3. Add `rustc` validation to CLI and tests
+4. Fix type ownership issues in method returns
 
 **Soon (Should Do)**:
-4. Update playground example to use correct decoration format
-5. Add decoration keyword validation
-6. Add Rust output tab to playground
+5. Update playground example to correct decoration format
+6. Add decoration keyword validation
+7. Add Rust output tab to playground
+8. Fix security vulnerabilities
 
 **Future (Nice to Have)**:
-7. Enhanced error messages
-8. More comprehensive type inference
-9. Optimization passes
-10. Source maps for debugging
+9. Smarter type mapping (`&str` vs `String`)
+10. Lifetime parameter support
+11. Better error messages with line numbers
+12. Source maps for debugging
 
 ---
 
 **Review Status**: ✅ COMPLETE
-**Overall Recommendation**: **APPROVE** - Project has achieved core requirements. Minor fixes needed for production-ready Rust output.
+**Overall Recommendation**: **NEEDS WORK** - Fix Rust compilation issues before release
 
-**Major Improvement**: Previous review found 0% Rust generation implemented. Now at 100% implementation with minor syntax fixes needed.
+**Improvement from Last Review**: Tests and builds fixed ✅, but Rust output quality needs attention ⚠️
