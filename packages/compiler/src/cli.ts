@@ -54,7 +54,8 @@ program
   .command('compile <file>')
   .description('Compile a ScriptRust file to JavaScript')
   .option('-o, --output <file>', 'Output file')
-  .action((file: string, options: { output?: string }) => {
+  .option('-r, --rust', 'Compile to Rust instead of JavaScript')
+  .action((file: string, options: { output?: string; rust?: boolean }) => {
     const filePath = path.resolve(file);
 
     if (!fs.existsSync(filePath)) {
@@ -65,7 +66,7 @@ program
     const source = fs.readFileSync(filePath, 'utf-8');
     const compiler = new Compiler();
 
-    const result = compiler.compile(source);
+    const result = options.rust ? compiler.compileToRust(source) : compiler.compile(source);
 
     if (result.errors.length > 0) {
       console.error('Compilation errors:');
