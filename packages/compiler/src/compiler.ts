@@ -5,6 +5,7 @@
 import { Lexer } from './lexer';
 import { Parser } from './parser';
 import { CodeGenerator } from './codegen';
+import { RustCodeGenerator } from './rust-codegen';
 import * as AST from './ast';
 
 export interface CompilationResult {
@@ -61,7 +62,37 @@ export class Compiler {
     const fn = new Function(result.code);
     return fn();
   }
+
+  compileToRust(source: string): CompilationResult {
+    const errors: CompilationError[] = [];
+    let ast: AST.Program | null = null;
+    let code = '';
+
+    try {
+      // Lexical analysis
+      const lexer = new Lexer(source);
+      const tokens = lexer.tokenize();
+
+      // Syntax analysis
+      const parser = new Parser(tokens);
+      ast = parser.parse();
+
+      // Rust code generation
+      const codegen = new RustCodeGenerator();
+      code = codegen.generate(ast);
+    } catch (error: any) {
+      errors.push({
+        message: error.message,
+      });
+    }
+
+    return {
+      code,
+      ast: ast || { type: 'Program', body: [] },
+      errors,
+    };
+  }
 }
 
-export { Lexer, Parser, CodeGenerator };
+export { Lexer, Parser, CodeGenerator, RustCodeGenerator };
 export * from './ast';
